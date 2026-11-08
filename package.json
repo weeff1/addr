@@ -1,0 +1,13 @@
+{
+  "name": "chat-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "豆包聊天站（零依赖 Node 服务）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
