@@ -26,7 +26,10 @@ const ROOT = __dirname;
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'chat-db.json');
 
-const MAX_BODY = 64 * 1024;          // 请求体上限
+const MAX_BODY = 64 * 1024;          // 请求体上限（JSON 接口）
+const FILE_TTL_MS = 10 * 24 * 3600 * 1000; // 文件保留 10 天，过期自动删除
+const FILES_DIR = path.join(DATA_DIR, 'files');
+const SPACE_RESERVE = 100 * 1024 * 1024;   // 磁盘至少留 100MB，避免把手机塞满
 const MAX_TEXT_LEN = 2000;           // 单条消息上限
 const AVATAR_MAX_CHARS = 40 * 1024;  // 头像（压缩后的 data URL）长度上限
 const HISTORY_DEFAULT = 100;
@@ -49,11 +52,13 @@ let db = {
   messages: [],    // { id, userId, account, text, clientId, createdAt }
   sessions: [],    // { token, userId, createdAt, expiresAt }
   recalls: [],     // { seq, messageId, by, at }
+  files: {},       // { id -> { id, name, size, userId, account, createdAt } }
   meta: { seq: 0, nextUserId: 1, nextMessageId: 1 }
 };
 
 function ensureDataDir() {
   try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+  try { fs.mkdirSync(FILES_DIR, { recursive: true }); } catch (e) {}
 }
 
 function loadDb() {
@@ -65,6 +70,7 @@ function loadDb() {
     db.messages = Array.isArray(parsed.messages) ? parsed.messages : [];
     db.sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
     db.recalls = Array.isArray(parsed.recalls) ? parsed.recalls : [];
+    db.files = (parsed.files && typeof parsed.files === 'object') ? parsed.files : {};
     const m = parsed.meta || {};
     db.meta = {
       seq: Number(m.seq) || 0,
@@ -235,6 +241,7 @@ function toDto(m) {
   if (m.to) dto.to = m.to;
   if (m.mentions && m.mentions.length) dto.mentions = m.mentions;
   if (m.mentionAll) dto.mentionAll = true;
+  if (m.file) dto.file = { id: m.file.id, name: m.file.name, size: m.file.size };
   return dto;
 }
 
@@ -250,7 +257,7 @@ function extractMentions(text) {
 }
 
 /** 带 clientId 时按（账号 + clientId）幂等，重复提交返回原消息 */
-function saveMessage(user, text, clientId, to) {
+function saveMessage(user, text, clientId, to, file) {
   if (clientId) {
     const exist = db.messages.find(m => m.userId === user.id && m.clientId === clientId);
     if (exist) return { message: toDto(exist), duplicate: true };
@@ -270,6 +277,7 @@ function saveMessage(user, text, clientId, to) {
   if (to) row.to = to;
   if (mentions.length) row.mentions = mentions;
   if (mentionAll) row.mentionAll = true;
+  if (file) row.file = { id: file.id, name: file.name, size: file.size };
   db.messages.push(row);
   trimMessages();
   saveDb();
@@ -591,7 +599,13 @@ async function handleSend(req, res, user) {
   if (error) return fail(res, 400, error);
 
   const text = normalizeText(data.text);
-  if (!text) return fail(res, 400, '消息不能为空');
+  /* 文件消息：文本可以为空，但必须带一个真实存在的文件 id */
+  let file = null;
+  if (data.file && typeof data.file === 'object' && data.file.id) {
+    const f = (db.files || {})[String(data.file.id)];
+    if (f) file = { id: f.id, name: f.name, size: f.size };
+  }
+  if (!text && !file) return fail(res, 400, '消息不能为空');
   if (Array.from(text).length > MAX_TEXT_LEN) {
     return fail(res, 400, '消息不能超过 ' + MAX_TEXT_LEN + ' 个字符');
   }
@@ -610,8 +624,104 @@ async function handleSend(req, res, user) {
     ensureContact(other, user.account);
   }
 
-  const { message, duplicate } = saveMessage(user, text, clientId, to);
+  const { message, duplicate } = saveMessage(user, text, clientId, to, file);
   return sendJson(res, 200, { ok: true, message, duplicate: !!duplicate, online: onlineCount() });
+}
+
+/* ---------------------------- 文件上传 / 下载 ---------------------------- */
+/** 上传：前端直接把文件二进制 POST 过来（body 就是文件内容，不经 JSON），
+    流式写盘，不占内存；文件名放 X-File-Name 里（URL 编码） */
+function handleUpload(req, res, user) {
+  const rawName = req.headers['x-file-name'];
+  if (!rawName) return fail(res, 400, '缺少文件名');
+  let name = '';
+  try { name = decodeURIComponent(String(rawName)); } catch (e) { name = String(rawName); }
+  name = name.replace(/[\\/\u0000-\u001f]/g, '_').trim().slice(0, 120) || 'file';
+
+  const id = crypto.randomBytes(9).toString('hex');
+  const fp = path.join(FILES_DIR, id);
+  let received = 0;
+  let aborted = false;
+  /* 不限单个文件大小，但别把手机塞满：检查剩余空间 */
+  const spaceAtStart = freeSpace();
+
+  const ws = fs.createWriteStream(fp);
+  req.on('data', (chunk) => {
+    received += chunk.length;
+    if (received > spaceAtStart - SPACE_RESERVE) {
+      aborted = true;
+      try { ws.destroy(); } catch (e) {}
+      try { fs.unlink(fp, () => {}); } catch (e) {}
+      try { req.destroy(); } catch (e) {}
+      return fail(res, 507, '手机剩余空间不够了，先清点文件再传');
+    }
+  });
+  req.pipe(ws);
+
+  ws.on('finish', () => {
+    if (aborted) return;
+    db.files = db.files || {};
+    db.files[id] = {
+      id, name, size: received,
+      userId: user.id, account: user.account, createdAt: Date.now()
+    };
+    saveDb();
+    console.log('[upload]', user.account, name, received);
+    return sendJson(res, 200, { ok: true, file: { id, name, size: received } });
+  });
+  ws.on('error', (e) => {
+    console.warn('[upload] 写盘失败', e.message);
+    try { fs.unlink(fp, () => {}); } catch (e2) {}
+    return fail(res, 500, '保存文件失败');
+  });
+}
+
+/** 下载：token 可以从 Authorization 头带，也可以从 ?token= 带（方便直接点链接） */
+function handleFileGet(req, res, id) {
+  const f = (db.files || {})[id];
+  if (!f) return fail(res, 404, '文件不存在（可能已超过 10 天被自动清理）');
+  const fp = path.join(FILES_DIR, id);
+  fs.stat(fp, (err, st) => {
+    if (err) return fail(res, 404, '文件已过期');
+    const encoded = encodeURIComponent(f.name).replace(/'/g, '%27');
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': st.size,
+      'Content-Disposition': "attachment; filename*=UTF-8''" + encoded,
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*'
+    });
+    fs.createReadStream(fp).pipe(res);
+  });
+}
+
+/** 磁盘剩余空间（拿不到就当作无限） */
+function freeSpace() {
+  try {
+    const st = fs.statfsSync(DATA_DIR);
+    return Number(st.bavail) * Number(st.bsize);
+  } catch (e) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+
+/** 清理超过 10 天的文件（删磁盘文件 + 删记录），每小时跑一次 */
+function cleanFiles() {
+  const cutoff = Date.now() - FILE_TTL_MS;
+  db.files = db.files || {};
+  let removed = 0;
+  Object.keys(db.files).forEach((id) => {
+    const f = db.files[id];
+    if (!f || !f.createdAt || f.createdAt < cutoff) {
+      delete db.files[id];
+      try { fs.unlink(path.join(FILES_DIR, id), () => {}); } catch (e) {}
+      removed++;
+    }
+  });
+  if (removed) {
+    saveDb();
+    console.log('[clean] 清理过期文件 ' + removed + ' 个');
+  }
 }
 
 function handleLogout(req, res, user) {
@@ -674,10 +784,15 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/register' && method === 'POST') return handleRegister(req, res);
     if (pathname === '/api/login' && method === 'POST') return handleLogin(req, res);
 
-    /* ---------- 以下都要登录 ---------- */
-    const token = tokenFromRequest(req);
+    /* ---------- 以下都要登录（下载链接可用 ?token= 传令牌） ---------- */
+    let token = tokenFromRequest(req);
+    if (!token) token = (url.searchParams.get('token') || '').trim();
     const user = userByToken(token);
     if (!user) return fail(res, 401, '登录已失效，请重新登录');
+
+    if (pathname === '/api/upload' && method === 'POST') return handleUpload(req, res, user);
+    const fileMatch = pathname.match(/^\/api\/file\/([a-f0-9]{18})$/);
+    if (fileMatch && method === 'GET') return handleFileGet(req, res, fileMatch[1]);
 
     if (pathname === '/api/me' && method === 'GET') return handleMe(req, res, user);
     if (pathname === '/api/users' && method === 'GET') return handleUsers(req, res, user);
@@ -713,6 +828,8 @@ const server = http.createServer(async (req, res) => {
 loadDb();
 sweepSessions();
 setInterval(sweepSessions, 30 * 60 * 1000).unref();
+cleanFiles();
+setInterval(cleanFiles, 60 * 60 * 1000).unref();
 
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {

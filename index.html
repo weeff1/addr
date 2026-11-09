@@ -199,6 +199,18 @@
   }
   #sendBtn:active { opacity: .86; }
   #sendBtn:disabled { background: #c9cdd4; }
+  #fileBtn {
+    flex: 0 0 auto; height: 42px; width: 42px; padding: 0;
+    border: 1px solid #dcdfe6; border-radius: 21px; background: #fff;
+    font-size: 18px; line-height: 1;
+  }
+  #fileBtn:active { opacity: .8; }
+  .bubble.file { padding: 10px 12px; }
+  .file-link { display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
+  .file-icon { font-size: 20px; line-height: 1; }
+  .file-meta-box { min-width: 0; }
+  .file-name { font-weight: 600; font-size: 14px; word-break: break-all; }
+  .file-size { font-size: 12px; opacity: .72; margin-top: 2px; }
 
   /* ---------- 轻提示 ---------- */
   #toast {
@@ -511,6 +523,8 @@
     </div>
 
     <footer class="composer">
+      <button id="fileBtn" type="button" title="上传文件">📎</button>
+      <input id="fileInput" type="file" style="display:none">
       <textarea id="input" rows="1" maxlength="2000"
                 placeholder="输入消息…" enterkeyhint="send"></textarea>
       <button id="sendBtn" type="button" disabled>发送</button>
@@ -1265,12 +1279,55 @@
 
     var bubble = document.createElement('div');
     bubble.className = 'bubble';
-    /* 先转义再加 @ 高亮；哪些 @ 算数由服务端判定后带下来 */
-    bubble.innerHTML = renderTextHtml(message.text, message.mentions, message.mentionAll);
+    if (message.file && message.file.id) {
+      /* 文件消息：显示文件名 + 大小，点一下直接下载 */
+      bubble.className = 'bubble file';
+      bubble.appendChild(buildFileBox(message.file));
+    } else {
+      /* 先转义再加 @ 高亮；哪些 @ 算数由服务端判定后带下来 */
+      bubble.innerHTML = renderTextHtml(message.text, message.mentions, message.mentionAll);
+    }
 
     row.appendChild(meta);
     row.appendChild(bubble);
     return row;
+  }
+
+  function fileSizeText(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  function buildFileBox(file) {
+    var a = document.createElement('a');
+    a.className = 'file-link';
+    a.href = BASE + '/api/file/' + encodeURIComponent(file.id) +
+             '?token=' + encodeURIComponent(state.token || '');
+    a.setAttribute('download', file.name || 'file');
+    a.setAttribute('target', '_blank');
+    a.setAttribute('rel', 'noopener');
+
+    var icon = document.createElement('span');
+    icon.className = 'file-icon';
+    icon.textContent = '📎';
+
+    var box = document.createElement('div');
+    box.className = 'file-meta-box';
+    var nm = document.createElement('div');
+    nm.className = 'file-name';
+    nm.textContent = file.name || '文件';
+    var sz = document.createElement('div');
+    sz.className = 'file-size';
+    sz.textContent = fileSizeText(file.size) + ' · 点击下载（10 天后自动清理）';
+    box.appendChild(nm);
+    box.appendChild(sz);
+
+    a.appendChild(icon);
+    a.appendChild(box);
+    return a;
   }
 
   function escapeHtml(s) {
@@ -1606,6 +1663,72 @@
   }
 
   $('sendBtn').addEventListener('click', send);
+
+  /* ---------------- 上传文件（任意类型、不限大小） ---------------- */
+  function openFilePicker() {
+    if (!state.connected || !state.token) { toast('尚未连接，请稍候重试'); return; }
+    $('fileInput').click();
+  }
+
+  function removePendingRow(clientId) {
+    var row = state.byClientId[clientId];
+    if (row && row.parentNode) row.parentNode.removeChild(row);
+    delete state.byClientId[clientId];
+  }
+
+  function uploadAndSend(file) {
+    if (file.size > 200 * 1024 * 1024) toast('文件挺大，上传会慢一些，别切走页面');
+    var to = (state.currentChat === '' || state.currentChat === null) ? null : state.currentChat;
+    var clientId = 'f' + Date.now() + Math.random().toString(36).slice(2, 8);
+    appendPending('📎 上传中：' + file.name + '（' + fileSizeText(file.size) + '）', clientId);
+
+    var lastToast = 0;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', BASE + '/api/upload', true);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
+    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+    xhr.upload.onprogress = function (ev) {
+      if (!ev.lengthComputable) return;
+      var pct = Math.round(ev.loaded / ev.total * 100);
+      var now = Date.now();
+      if (pct < 100 && now - lastToast > 1200) { lastToast = now; toast('上传中 ' + pct + '%'); }
+    };
+    xhr.onload = function () {
+      var d = {};
+      try { d = JSON.parse(xhr.responseText || '{}'); } catch (e) {}
+      if (xhr.status < 200 || xhr.status >= 300 || d.ok === false) {
+        removePendingRow(clientId);
+        toast(d.error || ('上传失败（' + xhr.status + '）'));
+        return;
+      }
+      request('/api/messages', {
+        method: 'POST', token: state.token,
+        body: {
+          text: '', clientId: clientId, to: to,
+          file: { id: d.file.id, name: d.file.name, size: d.file.size }
+        }
+      }).then(function (data) {
+        removePendingRow(clientId);
+        if (data.message) appendMessage(data.message);
+        else toast('文件已上传，但消息没发出去');
+      }).catch(function (e) {
+        removePendingRow(clientId);
+        toast(e.message || '消息发送失败');
+      });
+    };
+    xhr.onerror = function () {
+      removePendingRow(clientId);
+      toast('上传失败，网络中断了');
+    };
+    xhr.send(file);
+  }
+
+  $('fileBtn').addEventListener('click', openFilePicker);
+  $('fileInput').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    this.value = '';
+    if (f) uploadAndSend(f);
+  });
 
   var input = $('input');
   function autoGrow(ta) {
