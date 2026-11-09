@@ -6,9 +6,10 @@
 <title>聊天站</title>
 <style>
 html,body{margin:0;height:100%;font-family:system-ui,-apple-system,sans-serif}
-#tip{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#f5f6f7;color:#1f2329;text-align:center;padding:20px}
+#tip{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#f5f6f7;color:#1f2329;text-align:center;padding:24px}
 #tip h3{margin:0;font-size:17px}
-#tip p{margin:0;font-size:13px;color:#666;line-height:1.6}
+#tip p{margin:0;font-size:13px;color:#666;line-height:1.7}
+#retry{padding:9px 20px;border:0;border-radius:20px;background:#1f6feb;color:#fff;font-size:14px}
 #frame{position:fixed;inset:0;width:100%;height:100%;border:0;display:none}
 </style>
 </head>
@@ -21,23 +22,38 @@ var SOURCES=[
  'https://cdn.jsdelivr.net/gh/weeff1/addr@main/README.md'
 ];
 function fetchText(u){
-  return fetch(u+'?x='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.text():'';}).catch(function(){return '';});
+  return fetch(u+'?x='+Date.now(),{cache:'no-store'})
+    .then(function(r){return r.ok?r.text():'';}).catch(function(){return '';});
+}
+function probe(url){
+  return fetch(url+'/api/health?x='+Date.now(),{cache:'no-store'})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){return !!(d&&d.ok===true);})
+    .catch(function(){return false;});
+}
+function showFrame(url){
+  var f=document.getElementById('frame');
+  document.getElementById('tip').style.display='none';
+  f.style.display='block';
+  f.src=url;
+}
+function showOffline(){
+  var tip=document.getElementById('tip');
+  tip.innerHTML='<h3>服务器现在不在线</h3><p>手机开机、Termux 里跑好启动命令后<br>点下面按钮就能连上</p>';
+  var btn=document.createElement('button');
+  btn.id='retry'; btn.textContent='重试';
+  btn.onclick=function(){ location.reload(); };
+  tip.appendChild(btn);
 }
 async function main(){
-  var url='';
   for(var i=0;i<SOURCES.length;i++){
     var t=await fetchText(SOURCES[i]);
     var m=String(t||'').match(/https?:\/\/[^\s"'<>]+/);
-    if(m){url=m[0].replace(/\/+$/,'');break;}
+    if(!m) continue;
+    var url=m[0].replace(/\/+$/,'');
+    if(await probe(url)){ showFrame(url); return; }
   }
-  if(!url){
-    document.getElementById('tip').innerHTML='<h3>服务器现在不在线</h3><p>手机开机后就能连上，过一会儿再刷新试试</p>';
-    return;
-  }
-  var f=document.getElementById('frame');
-  f.onload=function(){document.getElementById('tip').style.display='none';f.style.display='block';};
-  f.src=url;
-  setTimeout(function(){ if(f.style.display!=='block'){ location.replace(url); } },6000);
+  showOffline();
 }
 main();
 </script>
