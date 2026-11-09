@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>聊天站</title>
+<style>
+html,body{margin:0;height:100%;font-family:system-ui,-apple-system,sans-serif}
+#tip{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#f5f6f7;color:#1f2329;text-align:center;padding:20px}
+#tip h3{margin:0;font-size:17px}
+#tip p{margin:0;font-size:13px;color:#666;line-height:1.6}
+#frame{position:fixed;inset:0;width:100%;height:100%;border:0;display:none}
+</style>
+</head>
+<body>
+<div id="tip"><h3>正在连接聊天站…</h3><p>马上就好</p></div>
+<iframe id="frame" title="聊天站"></iframe>
+<script>
+var SOURCES=[
+ 'https://raw.githubusercontent.com/weeff1/addr/main/README.md',
+ 'https://cdn.jsdelivr.net/gh/weeff1/addr@main/README.md'
+];
+function fetchText(u){
+  return fetch(u+'?x='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.text():'';}).catch(function(){return '';});
+}
+async function main(){
+  var url='';
+  for(var i=0;i<SOURCES.length;i++){
+    var t=await fetchText(SOURCES[i]);
+    var m=String(t||'').match(/https?:\/\/[^\s"'<>]+/);
+    if(m){url=m[0].replace(/\/+$/,'');break;}
+  }
+  if(!url){
+    document.getElementById('tip').innerHTML='<h3>服务器现在不在线</h3><p>手机开机后就能连上，过一会儿再刷新试试</p>';
+    return;
+  }
+  var f=document.getElementById('frame');
+  f.onload=function(){document.getElementById('tip').style.display='none';f.style.display='block';};
+  f.src=url;
+  setTimeout(function(){ if(f.style.display!=='block'){ location.replace(url); } },6000);
+}
+main();
+</script>
+</body>
+</html>
