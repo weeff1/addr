@@ -610,8 +610,10 @@
   var ACCOUNT_KEY = 'chat_account';
   var LASTID_KEY = 'chat_lastid_';   // 按账号记：上次看到的最大消息 id
   var MAX_TEXT = 2000;
-  var POLL_MS = 2000;          // 前台轮询间隔
-  var POLL_MS_BG = 6000;       // 后台轮询间隔（省电）
+  var POLL_MS = 120;           // 长轮询：收到响应后几乎立刻再发下一条
+  var POLL_MS_BG = 8000;       // 后台不用长轮询，间隔长一点省电
+  var POLL_WAIT = 20;          // 前台最多挂 20 秒等新消息
+  var POLL_TIMEOUT = 30000;    // 请求超时兜底（防止隧道卡住一直不返回）
 
   /* ---------------- 基础工具 ---------------- */
   function $(id) { return document.getElementById(id); }
@@ -668,12 +670,21 @@
     if (!BASE) return Promise.reject(new Error('未配置后端地址'));
     var headers = { 'Content-Type': 'application/json' };
     if (opt.token) headers['Authorization'] = 'Bearer ' + opt.token;
-    return fetch(BASE + path, {
+    var init = {
       method: opt.method || 'GET',
       headers: headers,
       body: opt.body ? JSON.stringify(opt.body) : undefined
-    }).then(function (res) {
+    };
+    var timer = null;
+    if (opt.timeout && typeof AbortController !== 'undefined') {
+      var ctrl = new AbortController();
+      init.signal = ctrl.signal;
+      timer = setTimeout(function () { ctrl.abort(); }, opt.timeout);
+    }
+    var clear = function () { if (timer) { clearTimeout(timer); timer = null; } };
+    return fetch(BASE + path, init).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
+        clear();
         if (!res.ok || (data && data.ok === false)) {
           var err = new Error((data && data.error) || ('请求失败（' + res.status + '）'));
           err.status = res.status;
@@ -681,6 +692,9 @@
         }
         return data;
       });
+    }).catch(function (e) {
+      clear();
+      throw e;
     });
   }
 
@@ -987,13 +1001,25 @@
     closeMention();
 
     var cursorBefore = state.lastId;
+
+    /* 先用本地已有的消息立刻画出来，切换会话时不至于白屏等网络 */
+    var localList = Object.keys(state.messages || {}).map(function (id) { return state.messages[id]; })
+      .filter(function (m) {
+        if (!m) return false;
+        if (key === '') return !m.to;
+        return (m.to === key) || (m.account === key && m.to === state.account);
+      })
+      .sort(function (a, b) { return a.id - b.id; });
+    resetMessages(localList);
+    state.lastId = Math.max(cursorBefore, state.lastId || 0);
+
     var qs = '/api/messages?limit=50' + (key ? '&to=' + encodeURIComponent(key) : '');
-    request(qs, { token: state.token }).then(function (data) {
+    request(qs, { token: state.token, timeout: 15000 }).then(function (data) {
       resetMessages(data.messages || []);
       /* 全局游标不能因为切会话被拉回去，否则老消息会被当成新消息 */
       state.lastId = Math.max(cursorBefore, state.lastId || 0);
     }).catch(function (e) {
-      resetMessages([]);
+      /* 拉不到就先留着本地内容，别把已显示的清空 */
       toast((e && (e.message || e.error)) || '加载消息失败');
     });
   }
@@ -1089,8 +1115,9 @@
   function pollOnce() {
     if (!state.polling || state.manualClose || !state.token) return;
 
-    var qs = '?after=' + state.lastId + '&recallAfter=' + state.recallSeq + '&limit=200';
-    request('/api/poll' + qs, { token: state.token })
+    var qs = '?after=' + state.lastId + '&recallAfter=' + state.recallSeq + '&limit=200' +
+             '&wait=' + (document.hidden ? 0 : POLL_WAIT);
+    request('/api/poll' + qs, { token: state.token, timeout: document.hidden ? 15000 : POLL_TIMEOUT })
       .then(function (data) {
         state.pollFails = 0;
         state.connected = true;

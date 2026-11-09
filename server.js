@@ -564,33 +564,63 @@ function handlePoll(req, res, user, query) {
   const after = Number(query.get('after') || 0);
   const recallAfter = Number(query.get('recallAfter') || 0);
   const limit = Number(query.get('limit') || HISTORY_DEFAULT);
+  /* 长轮询：wait=N 表示「最多挂 N 秒，一有新消息立刻返回」，最晚 25 秒 */
+  const waitSec = Math.min(Math.max(Number(query.get('wait') || 0), 0), 25);
 
-  /* 不论首屏还是增量，都只给我能看见的（公共 + 我和别人的私聊），
-     前端自己按会话分流：正在看的那条 append，别的算未读。
-     不能在这里只给公共消息，否则游标还是 0 的人永远收不到私聊。 */
-  const messages = after > 0
-    ? messagesAfter(after, Math.min(limit, HISTORY_MAX), user)
-    : messagesAfter(0, Math.min(limit || HISTORY_DEFAULT, HISTORY_DEFAULT), user);
+  const buildPayload = () => {
+    /* 不论首屏还是增量，都只给我能看见的（公共 + 我和别人的私聊），
+       前端自己按会话分流：正在看的那条 append，别的算未读。 */
+    const messages = after > 0
+      ? messagesAfter(after, Math.min(limit, HISTORY_MAX), user)
+      : messagesAfter(0, Math.min(limit || HISTORY_DEFAULT, HISTORY_DEFAULT), user);
 
-  const recalls = db.recalls
-    .filter(r => r.seq > recallAfter)
-    .map(r => ({ seq: r.seq, messageId: r.messageId, by: r.by }));
+    const recalls = db.recalls
+      .filter(r => r.seq > recallAfter)
+      .map(r => ({ seq: r.seq, messageId: r.messageId, by: r.by }));
 
-  const lastId = db.messages.length ? db.messages[db.messages.length - 1].id : 0;
-  const lastSeq = db.recalls.length ? db.recalls[db.recalls.length - 1].seq : 0;
+    const lastId = db.messages.length ? db.messages[db.messages.length - 1].id : 0;
+    const lastSeq = db.recalls.length ? db.recalls[db.recalls.length - 1].seq : 0;
 
-  return sendJson(res, 200, {
-    ok: true,
-    account: user.account,
-    online: onlineCount(),
-    messages,
-    recalls,
-    /* 好友列表跟着每次轮询一起下发：别人刚加你为好友时，
-       你这边不用重新登录也能立刻看到对方，否则会「明明加了好友却看不见他发的消息」。 */
-    contacts: contactList(user),
-    lastId,
-    lastSeq,
-    serverTime: Date.now()
+    return {
+      ok: true,
+      account: user.account,
+      online: onlineCount(),
+      messages,
+      recalls,
+      /* 好友列表跟着每次轮询一起下发：别人刚加你为好友时，
+         你这边不用重新登录也能立刻看到对方，否则会「明明加了好友却看不见他发的消息」。 */
+      contacts: contactList(user),
+      lastId,
+      lastSeq,
+      serverTime: Date.now()
+    };
+  };
+
+  /* 首屏（after=0）或者不要求等待时，直接返回 */
+  if (waitSec <= 0 || after <= 0) return sendJson(res, 200, buildPayload());
+
+  const startedAt = Date.now();
+  let finished = false;
+  let timer = null;
+
+  const finish = () => {
+    if (finished) return;
+    const payload = buildPayload();
+    const hasNews = payload.messages.length > 0 || payload.recalls.length > 0;
+    const timedOut = Date.now() - startedAt >= waitSec * 1000;
+    if (hasNews || timedOut) {
+      finished = true;
+      if (timer) clearInterval(timer);
+      sendJson(res, 200, payload);
+    }
+  };
+
+  /* 每 300ms 检查一次有没有新东西；有就立刻回，没有就等到超时 */
+  timer = setInterval(finish, 300);
+  finish();
+  req.on('close', () => {
+    finished = true;
+    if (timer) clearInterval(timer);
   });
 }
 
