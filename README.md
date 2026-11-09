@@ -1,1 +1,1 @@
-https://ced8ab6a1bb229.lhr.life
+https://doubao-chat-8899.serveo.net
