@@ -53,7 +53,10 @@ let db = {
   sessions: [],    // { token, userId, createdAt, expiresAt }
   recalls: [],     // { seq, messageId, by, at }
   files: {},       // { id -> { id, name, size, userId, account, createdAt } }
-  meta: { seq: 0, nextUserId: 1, nextMessageId: 1 }
+  notice: { text: '', by: '', at: 0, ver: 0 },   // 群公告
+  mutes: {},       // { account -> 解禁时间戳 }
+  pinned: [],      // [{ messageId, account, text, createdAt, by, at }] 置顶消息快照
+  meta: { seq: 0, nextUserId: 1, nextMessageId: 1, ownerAccount: '' }
 };
 
 function ensureDataDir() {
@@ -71,11 +74,17 @@ function loadDb() {
     db.sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
     db.recalls = Array.isArray(parsed.recalls) ? parsed.recalls : [];
     db.files = (parsed.files && typeof parsed.files === 'object') ? parsed.files : {};
+    db.notice = (parsed.notice && typeof parsed.notice === 'object')
+      ? { text: String(parsed.notice.text || ''), by: String(parsed.notice.by || ''), at: Number(parsed.notice.at) || 0, ver: Number(parsed.notice.ver) || 0 }
+      : { text: '', by: '', at: 0, ver: 0 };
+    db.mutes = (parsed.mutes && typeof parsed.mutes === 'object') ? parsed.mutes : {};
+    db.pinned = Array.isArray(parsed.pinned) ? parsed.pinned : [];
     const m = parsed.meta || {};
     db.meta = {
       seq: Number(m.seq) || 0,
       nextUserId: Number(m.nextUserId) || (maxId(db.users, 'id') + 1),
-      nextMessageId: Number(m.nextMessageId) || (maxId(db.messages, 'id') + 1)
+      nextMessageId: Number(m.nextMessageId) || (maxId(db.messages, 'id') + 1),
+      ownerAccount: String(m.ownerAccount || '')
     };
   } catch (e) {
     if (e.code !== 'ENOENT') console.warn('[db] 读取失败，将新建：', e.message);
@@ -166,6 +175,22 @@ function findUserByAccount(account) {
 }
 function findUserById(id) {
   return db.users.find(u => u.id === id) || null;
+}
+
+const OWNER_ACCOUNT = String(process.env.OWNER || '').trim();  // 想换群主：OWNER=某个账号 node server.js
+
+/** 群主账号：环境变量优先 → 库里记的 → 叫「原作者」的那个人 */
+function ownerAccount() {
+  if (OWNER_ACCOUNT) return OWNER_ACCOUNT;
+  if (db.meta && db.meta.ownerAccount) return db.meta.ownerAccount;
+  if (findUserByAccount('原作者')) return '原作者';
+  return '';
+}
+function isOwner(user) {
+  if (!user) return false;
+  const o = ownerAccount();
+  /* 还没人叫「原作者」时，这个名字本身就是预定好的群主位（别人抢不走） */
+  return o ? user.account === o : user.account === '原作者';
 }
 
 function createSession(userId) {
@@ -264,7 +289,7 @@ function saveMessage(user, text, clientId, to, file) {
   }
   const mentions = extractMentions(text);
   /* @全体成员 只有账号名为「原作者」的人才算数，别人手打这串字只是普通文字 */
-  const mentionAll = user.account === '原作者' && /@全体成员/.test(text);
+  const mentionAll = isOwner(user) && /@全体成员/.test(text);
 
   const row = {
     id: db.meta.nextMessageId++,
@@ -532,7 +557,10 @@ async function handleLogin(req, res) {
 }
 
 function handleMe(req, res, user) {
-  return sendJson(res, 200, { ok: true, account: user.account, id: user.id, online: onlineCount() });
+  return sendJson(res, 200, {
+    ok: true, account: user.account, id: user.id, online: onlineCount(),
+    isOwner: isOwner(user), ownerAccount: ownerAccount()
+  });
 }
 
 /** @ 提及面板用的账号列表（只给名字，不给任何密码相关字段） */
@@ -543,8 +571,10 @@ function handleUsers(req, res, user) {
   return sendJson(res, 200, {
     ok: true,
     users,
-    /* 只有叫「原作者」的账号才有 @全体成员 的选项 */
-    canMentionAll: user.account === '原作者'
+    /* 只有群主才有 @全体成员 的选项 */
+    canMentionAll: isOwner(user),
+    ownerAccount: ownerAccount(),
+    isOwner: isOwner(user)
   });
 }
 
@@ -590,6 +620,12 @@ function handlePoll(req, res, user, query) {
       /* 好友列表跟着每次轮询一起下发：别人刚加你为好友时，
          你这边不用重新登录也能立刻看到对方，否则会「明明加了好友却看不见他发的消息」。 */
       contacts: contactList(user),
+      /* 群主相关的公共状态：公告、置顶、禁言名单 */
+      notice: db.notice,
+      pinned: db.pinned,
+      myMuteUntil: Number((db.mutes || {})[user.account] || 0),
+      ownerAccount: ownerAccount(),
+      isOwner: isOwner(user),
       lastId,
       lastSeq,
       serverTime: Date.now()
@@ -603,12 +639,21 @@ function handlePoll(req, res, user, query) {
   let finished = false;
   let timer = null;
 
+  /* 进长轮询时的状态快照：公告 / 置顶 / 我的禁言 一旦变化，也要立刻推给客户端，
+     否则「群主刚禁言你，你还能一直发」这种情况要等 20 秒才反应过来 */
+  const snapNoticeVer = (db.notice && db.notice.ver) || 0;
+  const snapPinLen = (db.pinned || []).length;
+  const snapMute = Number((db.mutes || {})[user.account] || 0);
+
   const finish = () => {
     if (finished) return;
     const payload = buildPayload();
     const hasNews = payload.messages.length > 0 || payload.recalls.length > 0;
+    const stateChanged = ((payload.notice && payload.notice.ver) || 0) !== snapNoticeVer
+      || (payload.pinned || []).length !== snapPinLen
+      || Number(payload.myMuteUntil || 0) !== snapMute;
     const timedOut = Date.now() - startedAt >= waitSec * 1000;
-    if (hasNews || timedOut) {
+    if (hasNews || stateChanged || timedOut) {
       finished = true;
       if (timer) clearInterval(timer);
       sendJson(res, 200, payload);
@@ -625,6 +670,15 @@ function handlePoll(req, res, user, query) {
 }
 
 async function handleSend(req, res, user) {
+  /* 被禁言就不能发言；群主不受自己规则限制 */
+  const muteUntil = Number((db.mutes || {})[user.account] || 0);
+  if (muteUntil > Date.now() && !isOwner(user)) {
+    const left = Math.ceil((muteUntil - Date.now()) / 1000);
+    const txt = left > 3600 ? Math.ceil(left / 3600) + ' 小时'
+      : left > 60 ? Math.ceil(left / 60) + ' 分钟'
+        : left + ' 秒';
+    return fail(res, 403, '你被禁言了，还剩 ' + txt);
+  }
   const { data, error } = await readBody(req);
   if (error) return fail(res, 400, error);
 
@@ -765,7 +819,7 @@ function handleLogout(req, res, user) {
 function handleRecall(res, user, messageId) {
   const row = db.messages.find(m => m.id === messageId);
   if (!row) return fail(res, 404, '撤销失败：消息不存在');
-  if (row.userId !== user.id) return fail(res, 403, '只能撤销自己发的消息');
+  if (row.userId !== user.id && !isOwner(user)) return fail(res, 403, '只能撤销自己发的消息');
 
   // 真删：直接从存储里移除
   db.messages = db.messages.filter(m => m.id !== messageId);
@@ -774,6 +828,78 @@ function handleRecall(res, user, messageId) {
   trimMessages();
   saveDb();
   return sendJson(res, 200, { ok: true, messageId, seq: db.meta.seq });
+}
+
+/* ---------------------------- 群主管理 ---------------------------- */
+function requireOwner(res, user) {
+  if (!isOwner(user)) { fail(res, 403, '只有群主能做这个操作'); return false; }
+  return true;
+}
+
+/** 发 / 改群公告；text 为空就是撤掉公告 */
+async function handleSetNotice(req, res, user) {
+  if (!requireOwner(res, user)) return;
+  const { data, error } = await readBody(req);
+  if (error) return fail(res, 400, error);
+  const text = normalizeText(data.text || '').slice(0, 2000);
+  db.notice = {
+    text,
+    by: text ? user.account : '',
+    at: Date.now(),
+    ver: (db.notice.ver || 0) + 1
+  };
+  saveDb();
+  return sendJson(res, 200, { ok: true, notice: db.notice });
+}
+
+/** 禁言：minutes = 0 解除；正数 = 禁言这么多分钟 */
+async function handleMute(req, res, user) {
+  if (!requireOwner(res, user)) return;
+  const { data, error } = await readBody(req);
+  if (error) return fail(res, 400, error);
+
+  const target = normalizeAccount(data.account || '');
+  if (!target) return fail(res, 400, '请选择要禁言的人');
+  if (target === user.account) return fail(res, 400, '不能禁言自己');
+  const other = findUserByAccount(target);
+  if (!other) return fail(res, 404, '没有这个账号');
+
+  const minutes = Number(data.minutes) || 0;
+  db.mutes = db.mutes || {};
+  if (minutes <= 0) delete db.mutes[target];
+  else db.mutes[target] = Date.now() + minutes * 60 * 1000;
+  saveDb();
+  return sendJson(res, 200, { ok: true, mutes: db.mutes, target, minutes: minutes > 0 ? minutes : 0 });
+}
+
+/** 置顶一条消息（存快照，原消息被撤回后置顶也还在） */
+async function handlePin(req, res, user) {
+  if (!requireOwner(res, user)) return;
+  const { data, error } = await readBody(req);
+  if (error) return fail(res, 400, error);
+
+  const id = Number(data.messageId);
+  if (!id) return fail(res, 400, '缺少消息编号');
+  const row = db.messages.find(m => m.id === id);
+  if (!row) return fail(res, 404, '消息不存在');
+  if (db.pinned.some(p => p.messageId === id)) {
+    return sendJson(res, 200, { ok: true, pinned: db.pinned });
+  }
+  db.pinned.push({
+    messageId: row.id, account: row.account, text: row.text || '',
+    file: row.file ? { id: row.file.id, name: row.file.name, size: row.file.size } : null,
+    createdAt: row.createdAt, by: user.account, at: Date.now()
+  });
+  if (db.pinned.length > 5) db.pinned = db.pinned.slice(-5);
+  saveDb();
+  return sendJson(res, 200, { ok: true, pinned: db.pinned });
+}
+
+function handleUnpin(req, res, user, id) {
+  if (!requireOwner(res, user)) return;
+  db.pinned = db.pinned.filter(p => p.messageId !== id);
+  saveDb();
+  return sendJson(res, 200, { ok: true, pinned: db.pinned });
 }
 
 /* ============================ 服务器 ============================ */
@@ -841,6 +967,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/api/messages' && method === 'POST') return handleSend(req, res, user);
     if (pathname === '/api/logout' && method === 'POST') return handleLogout(req, res, user);
+
+    /* ---------- 群主管理 ---------- */
+    if (pathname === '/api/admin/notice' && method === 'POST') return handleSetNotice(req, res, user);
+    if (pathname === '/api/admin/mute' && method === 'POST') return handleMute(req, res, user);
+    if (pathname === '/api/admin/pin' && method === 'POST') return handlePin(req, res, user);
+    const unpinMatch = pathname.match(/^\/api\/admin\/pin\/(\d+)$/);
+    if (unpinMatch && method === 'DELETE') return handleUnpin(req, res, user, Number(unpinMatch[1]));
 
     const delMatch = pathname.match(/^\/api\/messages\/(\d+)$/);
     if (delMatch && method === 'DELETE') {

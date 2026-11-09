@@ -394,6 +394,74 @@
   }
   .mention-tip:not(.hidden) { animation: tipIn .22s ease-out; }
   @keyframes tipIn { from { opacity: 0; } to { opacity: 1; } }
+  /* ===== 群主徽章（橙底白字，显示在名字上方） ===== */
+  .badge-line { margin: 0 4px 3px; line-height: 1; }
+  .badge-line.me { text-align: right; }
+  .owner-badge {
+    display: inline-block;
+    background: #ff7a00;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 4px;
+    vertical-align: middle;
+    letter-spacing: .5px;
+  }
+
+  /* ===== 群公告条 ===== */
+  .notice-bar {
+    margin: 8px 12px 0;
+    background: #fff7e6;
+    border: 1px solid #ffd591;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #7a4a00;
+    line-height: 1.5;
+  }
+  .notice-bar .notice-tag {
+    display: inline-block;
+    background: #ff7a00;
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    margin-right: 6px;
+  }
+  .notice-bar .notice-edit {
+    float: right;
+    border: 0;
+    background: #ff7a00;
+    color: #fff;
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 10px;
+  }
+
+  /* ===== 置顶消息 ===== */
+  .pin-bar {
+    margin: 8px 12px 0;
+    background: #f2f6ff;
+    border-left: 3px solid #1f6feb;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: #2b3a55;
+    line-height: 1.5;
+  }
+  .pin-bar .pin-item { margin: 4px 0; padding-right: 18px; position: relative; }
+  .pin-bar .pin-who { color: #1f6feb; font-weight: 600; }
+  .pin-bar .pin-del {
+    position: absolute; right: -4px; top: 0;
+    border: 0; background: transparent; color: #98a2b3;
+    font-size: 14px; padding: 0 4px; line-height: 1.2;
+  }
+
+  /* ===== 被禁言时的输入区 ===== */
+  .composer.muted textarea { background: #f2f3f5; color: #98a2b3; }
+  .composer.muted button { opacity: .55; }
 </style>
 </head>
 <body>
@@ -511,6 +579,15 @@
       <button id="logoutBtn" class="ghost-btn" type="button">退出</button>
     </header>
 
+    <!-- 群公告 -->
+    <div id="noticeBar" class="notice-bar hidden">
+      <span class="notice-tag">公告</span><span id="noticeText"></span>
+      <button id="noticeEdit" class="notice-edit hidden" type="button">编辑</button>
+    </div>
+
+    <!-- 置顶消息 -->
+    <div id="pinBar" class="pin-bar hidden"></div>
+
     <main id="msgList">
       <div class="empty-tip" id="emptyTip">还没有消息，说点什么吧</div>
     </main>
@@ -538,6 +615,8 @@
 <div id="actionMask" class="action-mask"></div>
 <div id="actionSheet" class="action-sheet">
   <button id="actRecall" class="act-item danger" type="button">撤销</button>
+  <button id="actPin" class="act-item hidden" type="button">置顶这条</button>
+  <button id="actMute" class="act-item hidden" type="button">禁言他</button>
   <button id="actCopy" class="act-item" type="button">复制</button>
   <button id="actCancel" class="act-item cancel" type="button">取消</button>
 </div>
@@ -723,7 +802,12 @@
     pendingAvatar: null,      // 注册页刚选好的头像
     currentChat: null,        // null=在主页；''=公共聊天室；'账号'=私聊
     contacts: [],             // 好友名单
-    unread: {}                // {'': n, 好友账号: n}
+    unread: {},               // {'': n, 好友账号: n}
+    ownerAccount: '',         // 群主账号
+    isOwner: false,           // 我是不是群主
+    notice: null,             // 群公告 { text, by, at, ver }
+    pinned: [],               // 置顶消息快照
+    myMuteUntil: 0            // 我被禁言到什么时候
   };
   window.__state = state;
 
@@ -1153,6 +1237,18 @@
   function handlePollData(data) {
     var needAvatar = false;
 
+    /* 群主身份 / 公告 / 置顶 / 禁言：这些要先处理，后面渲染消息要用到 ownerAccount */
+    if (typeof data.ownerAccount === 'string' && data.ownerAccount !== state.ownerAccount) {
+      state.ownerAccount = data.ownerAccount;
+    }
+    if (typeof data.isOwner === 'boolean') state.isOwner = data.isOwner;
+    if (data.notice) renderNotice(data.notice);
+    if (Array.isArray(data.pinned)) renderPinned(data.pinned);
+    if (typeof data.myMuteUntil === 'number') {
+      state.myMuteUntil = data.myMuteUntil;
+      applyMuteState();
+    }
+
     /* 好友列表跟着每次轮询同步：对方刚把你加为好友时，你这边不用重登也能立刻出现，
        否则会出现「加了好友却看不到他的消息」。 */
     if (data && data.contacts) {
@@ -1236,7 +1332,8 @@
   }
 
   function updateSendState() {
-    $('sendBtn').disabled = !(state.connected && state.token);
+    var muted = Number(state.myMuteUntil) > Date.now() && !state.isOwner;
+    $('sendBtn').disabled = muted || !(state.connected && state.token);
   }
 
   /* ---------------- 消息渲染 ---------------- */
@@ -1284,6 +1381,16 @@
 
     var meta = document.createElement('div');
     meta.className = 'meta';
+    /* 群主发言：名字上方挂一个橙底白字的「群主」 */
+    var badgeLine = null;
+    if (state.ownerAccount && message.account === state.ownerAccount) {
+      badgeLine = document.createElement('div');
+      badgeLine.className = 'badge-line ' + (mine ? 'me' : 'other');
+      var badge = document.createElement('span');
+      badge.className = 'owner-badge';
+      badge.textContent = '群主';
+      badgeLine.appendChild(badge);
+    }
     if (!mine) {
       var av = avatarFor(message.account);
       if (av) {
@@ -1317,6 +1424,7 @@
 
     row.appendChild(meta);
     row.appendChild(bubble);
+    if (badgeLine) row.insertBefore(badgeLine, meta);
     return row;
   }
 
@@ -1893,13 +2001,128 @@
   /* ---------------- 长按消息：撤销 / 复制 / 取消 ---------------- */
   var actionTarget = null;
 
+  /* ---------------- 群主：公告 / 置顶 / 禁言 ---------------- */
+  function renderNotice(notice) {
+    state.notice = notice || { text: '' };
+    var bar = $('noticeBar');
+    if (!bar) return;
+    var text = (notice && notice.text) ? notice.text : '';
+    var btn = $('noticeEdit');
+    if (btn) {
+      if (state.isOwner) btn.classList.remove('hidden');
+      else btn.classList.add('hidden');
+    }
+    if (!text) { bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    $('noticeText').textContent = text;
+  }
+
+  function editNotice() {
+    var cur = (state.notice && state.notice.text) || '';
+    var v = window.prompt('群公告（留空就是撤掉公告）：', cur);
+    if (v === null) return;
+    request('/api/admin/notice', { method: 'POST', token: state.token, body: { text: v } })
+      .then(function (data) {
+        renderNotice(data.notice);
+        toast(v ? '公告已更新' : '公告已撤掉');
+      })
+      .catch(function (e) { toast(e.message || '公告设置失败'); });
+  }
+
+  function renderPinned(list) {
+    state.pinned = Array.isArray(list) ? list : [];
+    var bar = $('pinBar');
+    if (!bar) return;
+    if (!state.pinned.length) {
+      bar.classList.add('hidden');
+      bar.innerHTML = '';
+      return;
+    }
+    bar.classList.remove('hidden');
+    bar.innerHTML = '';
+    state.pinned.forEach(function (p) {
+      var item = document.createElement('div');
+      item.className = 'pin-item';
+      var who = document.createElement('span');
+      who.className = 'pin-who';
+      who.textContent = (p.account || '?') + '：';
+      var txt = document.createElement('span');
+      txt.textContent = p.file ? ('[文件] ' + p.file.name) : String(p.text || '').slice(0, 80);
+      item.appendChild(who);
+      item.appendChild(txt);
+      if (state.isOwner) {
+        var del = document.createElement('button');
+        del.className = 'pin-del';
+        del.type = 'button';
+        del.textContent = '×';
+        del.title = '取消置顶';
+        del.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          request('/api/admin/pin/' + p.messageId, { method: 'DELETE', token: state.token })
+            .then(function (data) { renderPinned(data.pinned); toast('已取消置顶'); })
+            .catch(function (e) { toast(e.message || '取消失败'); });
+        });
+        item.appendChild(del);
+      }
+      bar.appendChild(item);
+    });
+  }
+
+  function muteLeftText(until) {
+    var left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+    if (left > 3600) return Math.ceil(left / 3600) + ' 小时';
+    if (left > 60) return Math.ceil(left / 60) + ' 分钟';
+    return left + ' 秒';
+  }
+
+  function applyMuteState() {
+    var until = Number(state.myMuteUntil) || 0;
+    var muted = until > Date.now() && !state.isOwner;
+    var composer = document.querySelector('.composer');
+    if (composer) {
+      if (muted) composer.classList.add('muted');
+      else composer.classList.remove('muted');
+    }
+    var inp = $('input');
+    if (inp) {
+      inp.disabled = muted;
+      inp.placeholder = muted ? ('你被禁言了，还剩 ' + muteLeftText(until)) : '输入消息…';
+    }
+    var btn = $('sendBtn');
+    if (btn) {
+      if (muted) btn.disabled = true;
+      else updateSendState();
+    }
+  }
+
+  if ($('noticeEdit')) $('noticeEdit').addEventListener('click', editNotice);
+
   function openActionSheet(row) {
     actionTarget = row;
     var mine = row.dataset.mine === '1';
     var hasId = !!row.dataset.id;
     var btnRecall = $('actRecall');
-    btnRecall.disabled = !mine || !hasId;
-    btnRecall.textContent = !mine ? '撤销（只能撤自己的）' : (hasId ? '撤销' : '撤销（发送中…）');
+    btnRecall.disabled = !hasId || (!mine && !state.isOwner);
+    btnRecall.textContent = !hasId ? '撤销（发送中…）'
+      : (!mine ? (state.isOwner ? '撤销（群主可撤别人的）' : '撤销（只能撤自己的）') : '撤销');
+
+    /* 置顶 / 禁言：只有群主看得见 */
+    var btnPin = $('actPin');
+    if (btnPin) {
+      if (state.isOwner && hasId) btnPin.classList.remove('hidden');
+      else btnPin.classList.add('hidden');
+    }
+    var btnMute = $('actMute');
+    if (btnMute) {
+      var acc = row.dataset.account || '';
+      var canMute = state.isOwner && acc && acc !== state.account;
+      if (canMute) {
+        btnMute.classList.remove('hidden');
+        btnMute.textContent = '禁言 ' + acc;
+      } else {
+        btnMute.classList.add('hidden');
+      }
+    }
     $('actionMask').classList.add('show');
     $('actionSheet').classList.add('show');
   }
@@ -2027,6 +2250,32 @@
       .catch(function (e) {
         toast(e.message || '撤销失败');
       });
+  });
+
+  /* 群主：置顶这条消息 */
+  $('actPin').addEventListener('click', function () {
+    if (!actionTarget) return;
+    var id = Number(actionTarget.dataset.id);
+    closeActionSheet();
+    if (!id) { toast('这条消息还没发送完成'); return; }
+    request('/api/admin/pin', { method: 'POST', token: state.token, body: { messageId: id } })
+      .then(function (data) { renderPinned(data.pinned); toast('已置顶'); })
+      .catch(function (e) { toast(e.message || '置顶失败'); });
+  });
+
+  /* 群主：禁言某个人（自己填分钟数，填 0 就是解除） */
+  $('actMute').addEventListener('click', function () {
+    if (!actionTarget) return;
+    var acc = actionTarget.dataset.account || '';
+    closeActionSheet();
+    if (!acc) return;
+    var v = window.prompt('禁言「' + acc + '」多少分钟？（填 0 = 解除禁言）', '10');
+    if (v === null) return;
+    var minutes = Number(v);
+    if (isNaN(minutes) || minutes < 0) { toast('请输入分钟数'); return; }
+    request('/api/admin/mute', { method: 'POST', token: state.token, body: { account: acc, minutes: minutes } })
+      .then(function () { toast(minutes > 0 ? ('已禁言 ' + minutes + ' 分钟') : '已解除禁言'); })
+      .catch(function (e) { toast(e.message || '操作失败'); });
   });
 
   /* ---------------- 启动 ---------------- */
