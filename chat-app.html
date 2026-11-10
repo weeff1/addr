@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>聊天室</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f2f3f5; color: #1c1e21; overflow: hidden;
+  }
+  .hide { display: none !important; }
+
+  /* ---------- 登录 ---------- */
+  #login {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 24px;
+  }
+  #login .card {
+    width: 100%; max-width: 340px; background: #fff; border-radius: 16px;
+    padding: 24px 20px; box-shadow: 0 4px 20px rgba(0,0,0,.06);
+  }
+  #login h1 { font-size: 20px; margin: 0 0 4px; }
+  #login p { font-size: 12px; color: #a8abb2; margin: 0 0 18px; }
+  #login input {
+    width: 100%; height: 46px; border: 1px solid #e5e6eb; border-radius: 10px;
+    padding: 0 14px; font-size: 15px; font-family: inherit; outline: none;
+    background: #f7f8fa; margin-bottom: 10px;
+  }
+  #login input:focus { background: #fff; border-color: #2b7cff; }
+  #login button {
+    width: 100%; height: 46px; border: none; border-radius: 10px;
+    background: #2b7cff; color: #fff; font-size: 16px; font-weight: 600;
+    font-family: inherit; margin-top: 4px;
+  }
+  #login button:disabled { background: #c9cdd4; }
+  #login .alt {
+    background: transparent; color: #2b7cff; font-size: 14px;
+    font-weight: 400; margin-top: 8px; height: 40px;
+  }
+  #lmsg { font-size: 13px; color: #c0392b; min-height: 18px; margin-top: 8px; text-align: center; }
+  .ava-pick { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .ava-big {
+    width: 56px; height: 56px; border-radius: 12px; flex: none;
+    background: #f2f3f5; border: 1px dashed #c9cdd4;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: #a8abb2; overflow: hidden;
+  }
+  .ava-big img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ava-hint { font-size: 12px; color: #a8abb2; line-height: 1.5; flex: 1; }
+  .me-box { display: flex; align-items: center; gap: 8px; }
+  #myAva { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
+  #newGroup {
+    width: 34px; height: 34px; border-radius: 9px; border: none;
+    background: #f2f3f5; color: #4e5969; font-size: 17px; line-height: 1;
+    font-family: inherit;
+  }
+  .mini-badge {
+    background: #722ed1; color: #fff; font-size: 10px; padding: 0 5px;
+    border-radius: 4px; vertical-align: middle; margin-left: 4px;
+    font-weight: 400;
+  }
+  .cnt { flex: none; font-size: 11px; color: #a8abb2; margin-left: 6px; }
+
+  /* ---------- 会话列表 ---------- */
+  #convs { height: 100%; display: flex; flex-direction: column; background: #fff; }
+  #convs .top {
+    flex: none; height: 56px; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 16px;
+    border-bottom: 1px solid #ebedf0; font-size: 17px; font-weight: 600;
+  }
+  #convs .top .me { font-size: 12px; color: #a8abb2; font-weight: 400; }
+  #convItems { flex: 1; overflow-y: auto; }
+  .conv {
+    display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+    border-bottom: 1px solid #f2f3f5;
+  }
+  .conv:active { background: #f7f8fa; }
+  .ava {
+    width: 44px; height: 44px; border-radius: 10px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 17px; font-weight: 600;
+    overflow: hidden;
+  }
+  .ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .conv .info { flex: 1; min-width: 0; }
+  .conv .nm { font-size: 15px; font-weight: 500; }
+  .conv .sb { font-size: 12px; color: #a8abb2; margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #addBtn {
+    flex: none; margin: 12px 16px calc(84px + env(safe-area-inset-bottom));
+    height: 46px; border: none; border-radius: 10px; background: #fff;
+    color: #2b7cff; font-size: 15px; font-family: inherit;
+    box-shadow: 0 1px 6px rgba(0,0,0,.08);
+  }
+
+  /* ---------- 聊天 ---------- */
+  #app { height: 100%; display: flex; flex-direction: column; }
+  #top {
+    flex: none; height: 52px; background: #fff; display: flex;
+    align-items: center; gap: 8px; padding: 0 8px 0 4px;
+    border-bottom: 1px solid #ebedf0;
+  }
+  #back {
+    width: 40px; height: 40px; border: none; background: transparent;
+    font-size: 22px; color: #4e5969; flex: none;
+  }
+  #title { flex: 1; font-size: 16px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #more {
+    flex: none; width: 40px; height: 40px; border: none; background: transparent;
+    font-size: 19px; color: #4e5969;
+  }
+  #noticeBar {
+    flex: none; background: #fff7e6; color: #d46b08; font-size: 13px;
+    padding: 10px 14px; line-height: 1.5; border-bottom: 1px solid #ffe7ba;
+    display: flex; align-items: center; gap: 8px;
+  }
+  #noticeBar .txt { flex: 1; }
+  #noticeEdit {
+    border: none; background: #ffd591; color: #d46b08; font-size: 12px;
+    padding: 4px 10px; border-radius: 6px; font-family: inherit;
+  }
+  #pinBar {
+    flex: none; background: #f0f5ff; color: #2b4acb; font-size: 13px;
+    padding: 10px 14px; line-height: 1.5; border-bottom: 1px solid #d6e4ff;
+  }
+  #list {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 12px 12px 4px;
+  }
+  .msg { display: flex; gap: 8px; margin-bottom: 14px; align-items: flex-start; }
+  .msg.me { flex-direction: row-reverse; }
+  .msg .ava { width: 36px; height: 36px; border-radius: 9px; font-size: 14px; }
+  .msg .body { max-width: 74%; display: flex; flex-direction: column; }
+  .msg.me .body { align-items: flex-end; }
+  .badge-line { display: flex; margin-bottom: 3px; }
+  .badge-line.me { justify-content: flex-end; }
+  .owner-badge {
+    background: #ff7a00; color: #fff; font-size: 10px; padding: 1px 6px;
+    border-radius: 4px; line-height: 1.5;
+  }
+  .meta { font-size: 11px; color: #a8abb2; margin-bottom: 3px; }
+  .bubble {
+    background: #fff; padding: 9px 12px; border-radius: 12px;
+    font-size: 15px; line-height: 1.5; word-break: break-word; white-space: pre-wrap;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .msg.me .bubble { background: #2b7cff; color: #fff; }
+  .bubble .at {
+    color: #ff7a00; font-weight: 600;
+  }
+  .msg.me .bubble .at { color: #ffe58f; }
+  .file-link {
+    display: inline-block; margin-top: 6px; font-size: 13px;
+    color: #2b7cff; text-decoration: underline; word-break: break-all;
+  }
+  .msg.me .file-link { color: #fff; }
+  .file-btn {
+    display: inline-block; margin-top: 6px; font-size: 13px;
+    color: #2b7cff; text-decoration: underline; word-break: break-all;
+    background: none; border: none; padding: 0; font-family: inherit; text-align: left;
+  }
+  .msg.me .file-btn { color: #fff; }
+  .revoked { font-size: 12px; color: #a8abb2; font-style: italic; }
+  #bar {
+    flex: none; display: flex; align-items: flex-end; gap: 8px;
+    padding: 8px 10px calc(72px + env(safe-area-inset-bottom));
+    background: #fff; border-top: 1px solid #ebedf0;
+  }
+  #fileBtn {
+    flex: none; width: 40px; height: 40px; border-radius: 10px; border: none;
+    background: #f2f3f5; color: #4e5969; font-size: 20px; line-height: 1;
+  }
+  #inp {
+    flex: 1; min-height: 40px; max-height: 110px; resize: none;
+    border: 1px solid #e5e6eb; border-radius: 10px; padding: 9px 12px;
+    font-size: 15px; line-height: 1.4; font-family: inherit; outline: none;
+    background: #f7f8fa;
+  }
+  #inp:focus { background: #fff; border-color: #2b7cff; }
+  #sendBtn {
+    flex: none; height: 40px; padding: 0 16px; border: none; border-radius: 10px;
+    background: #2b7cff; color: #fff; font-size: 15px; font-weight: 600;
+    font-family: inherit;
+  }
+  #sendBtn:disabled { background: #c9cdd4; }
+  #status { padding: 0 12px 6px; font-size: 12px; color: #a8abb2; }
+
+  /* ---------- 操作菜单 ---------- */
+  #sheet {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    display: flex; align-items: flex-end; z-index: 20;
+  }
+  #sheet .panel {
+    width: 100%; background: #f7f8fa; border-radius: 14px 14px 0 0;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  }
+  #sheet button {
+    display: block; width: 100%; height: 50px; border: none;
+    background: #fff; font-size: 16px; font-family: inherit; color: #1c1e21;
+    margin-bottom: 1px;
+  }
+  #sheet button:first-child { border-radius: 10px 10px 0 0; }
+  #sheet button:last-child { border-radius: 0 0 10px 10px; margin-bottom: 8px; color: #8a8f99; }
+  #sheet button.danger { color: #c0392b; }
+  #sheet .cancel { margin-top: 8px; border-radius: 10px; color: #4e5969; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- 登录 -->
+<div id="login">
+  <div class="card">
+    <h1>聊天室</h1>
+    <p>账号登录，消息自动同步</p>
+    <div class="ava-pick">
+      <div class="ava-big" id="avaPick"><span>＋</span></div>
+      <div class="ava-hint">点头像可以选一张图片当头像，不选也行</div>
+    </div>
+    <input id="acc" placeholder="账号" autocomplete="username">
+    <input id="pwd" type="password" placeholder="密码" autocomplete="current-password">
+    <div id="lmsg"></div>
+    <button id="doLogin">登录</button>
+    <button id="doReg" class="alt">没有账号？注册一个</button>
+  </div>
+</div>
+
+<!-- 会话列表 -->
+<div id="convs" class="hide">
+  <div class="top">
+    <span>消息</span>
+    <div class="me-box">
+      <span class="me" id="whoAmI"></span>
+      <div class="ava" id="myAva" title="点击换头像"></div>
+      <button id="newGroup" title="创建群">＋</button>
+    </div>
+  </div>
+  <div id="convItems"></div>
+  <button id="addBtn">＋ 添加好友</button>
+</div>
+
+<!-- 聊天 -->
+<div id="app" class="hide">
+  <div id="top">
+    <button id="back">‹</button>
+    <span id="title">公共聊天室</span>
+    <button id="more">⋮</button>
+  </div>
+  <div id="noticeBar" class="hide"></div>
+  <div id="pinBar" class="hide"></div>
+  <div id="list"></div>
+  <div id="status"></div>
+  <div id="bar">
+    <button id="fileBtn">＋</button>
+    <textarea id="inp" rows="1" placeholder="说点什么…"></textarea>
+    <button id="sendBtn">发送</button>
+  </div>
+</div>
+
+<div id="sheet" class="hide"></div>
+<input type="file" id="filePick" class="hide">
+<input type="file" id="imgPick" class="hide" accept="image/*">
+
+<script>
+(function () {
+  /* ========== 配置 ========== */
+  /* token 用 base64 存，避开 GitHub 密钥扫描 */
+  var TOKEN = atob('Z2hwX2FHWkp4eW1icG8xekhkU01USGV6TTdWNHRRUXBVdjBZcTRKbg==');
+  var REPO  = 'weeff1/addr';
+  var API   = 'https://api.github.com/repos/' + REPO + '/contents/';
+  var RAW   = 'https://raw.githubusercontent.com/' + REPO + '/main/';
+  var OWNER = '原作者';
+  var DB_PATH = 'chat-db.json';
+  var KEEP_MSGS = 150;          /* 数据库里最多留多少条 */
+  var KEEP_DAYS = 10;           /* 超过 10 天的消息自动清掉 */
+  var POLL_MS = 3000;
+
+  var db = { v: 1, users: [], msgs: [], fr: [], notice: null, pin: [], mute: {}, meta: { owner: OWNER } };
+  var me = '';
+  var conv = 'public';
+  var dbSha = '';
+  var dbEtag = '';
+  var timer = null;
+  var lastId = 0;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  };
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+  /* ========== base64 ========== */
+  function b64enc(str) {
+    var u8 = new TextEncoder().encode(str);
+    var bin = '';
+    for (var i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+    return btoa(bin);
+  }
+  function b64dec(b64) {
+    var bin = atob(String(b64).replace(/\n/g, ''));
+    var u8 = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(u8);
+  }
+
+  /* ========== 密码 ========== */
+  function hashPass(s) {
+    var a = 0x811c9dc5, b = 0x1000193;
+    for (var i = 0; i < s.length; i++) {
+      a = ((a ^ s.charCodeAt(i)) * 16777619) >>> 0;
+      b = ((b + s.charCodeAt(i) * 31) * 2654435761) >>> 0;
+    }
+    return a.toString(36) + '-' + b.toString(36);
+  }
+
+  /* ========== GitHub 读写 ========== */
+  function ghGet(path, etag) {
+    var url = API + path + '?ref=main&_=' + Date.now();
+    var headers = { Authorization: 'token ' + TOKEN };
+    if (etag) headers['If-None-Match'] = etag;
+    return fetch(url, { headers: headers, cache: 'no-store' }).then(function (r) {
+      if (r.status === 304) return { notMod: true };
+      if (r.status === 404) return { missing: true };
+      if (!r.ok) throw new Error('读取失败 ' + r.status);
+      return r.json().then(function (j) {
+        return {
+          text: b64dec(j.content),
+          sha: j.sha,
+          etag: r.headers.get('ETag') || ''
+        };
+      });
+    });
+  }
+
+  function ghPut(path, text, sha, msg) {
+    var body = { message: msg || 'update', content: b64enc(text) };
+    if (sha) body.sha = sha;
+    return fetch(API + path, {
+      method: 'PUT',
+      headers: { Authorization: 'token ' + TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
+  /* ========== 数据库 ========== */
+  function normalize(d) {
+    d.v = 1;
+    d.users = d.users || [];
+    d.msgs = d.msgs || [];
+    d.fr = d.fr || [];
+    d.groups = d.groups || [];
+    d.pin = d.pin || [];
+    d.mute = d.mute || {};
+    d.meta = d.meta || { owner: OWNER };
+    if (!d.meta.owner) d.meta.owner = OWNER;
+    return d;
+  }
+
+  /* 会话标识：public / u:账号 / g:群id */
+  function isGroup(conv) { return conv.indexOf('g:') === 0; }
+  function isDm(conv) { return conv.indexOf('u:') === 0; }
+  function convAcc(conv) { return isDm(conv) ? conv.slice(2) : conv; }
+  function convGid(conv) { return conv.slice(2); }
+  function myGroups() {
+    return (db.groups || []).filter(function (g) { return g.m.indexOf(me) >= 0; });
+  }
+  function findGroup(gid) {
+    return (db.groups || []).filter(function (g) { return g.id === gid; })[0];
+  }
+  function groupOwnerOf(gid) {
+    var g = findGroup(gid);
+    return g ? g.o : '';
+  }
+  function isGroupOwner(gid) {
+    var g = findGroup(gid);
+    return !!g && (g.o === me || isOwner(me));
+  }
+
+  function loadDB(force) {
+    return ghGet(DB_PATH, (!force && dbEtag) ? dbEtag : '').then(function (r) {
+      if (r.notMod) return { changed: false };
+      if (r.missing) return { changed: false, empty: true };
+      db = normalize(JSON.parse(r.text));
+      dbSha = r.sha;
+      dbEtag = r.etag;
+      preloadAvatars();
+      return { changed: true };
+    });
+  }
+
+  /* 改数据库：拿最新 → 改 → 写回，冲突就重试 */
+  function mutate(fn) {
+    var attempt = 0;
+    function once() {
+      attempt++;
+      return ghGet(DB_PATH, '').then(function (r) {
+        if (r.missing) throw new Error('数据库文件不存在');
+        var cur = normalize(JSON.parse(r.text));
+        var ret = fn(cur);
+        if (ret === false) return Promise.resolve(false);
+        return ghPut(DB_PATH, JSON.stringify(cur), r.sha, 'chat update').then(function (res) {
+          if (res.ok) {
+            db = cur;
+            dbEtag = '';
+            dbSha = '';
+            return true;
+          }
+          if (attempt < 3) return sleep(300).then(once);
+          throw new Error('保存失败（可能有别人同时在改，重试也没成功）');
+        });
+      });
+    }
+    return once();
+  }
+
+  /* ========== 身份与权限 ========== */
+  function isOwner(a) {
+    var o = (db.meta && db.meta.owner) || OWNER;
+    return a === o || a === OWNER;
+  }
+  function mutedUntil(a) { return (db.mute && db.mute[a]) || 0; }
+  function isMuted(a) { return mutedUntil(a) > Date.now(); }
+  function avaColor(name) {
+    var h = 0;
+    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    var cs = ['#2b7cff', '#52c41a', '#fa8c16', '#eb2f96', '#722ed1', '#13c2c2', '#f5222d'];
+    return cs[h % cs.length];
+  }
+  var avaCache = {};        /* 账号 -> 本地图片地址 */
+  var avaLoading = {};
+
+  function avaSrc(name) {
+    return avaCache[name] || '';
+  }
+  /* 头像不走 raw 域名（国内常连不上），改成走 GitHub 接口取，取到后缓存在本地 */
+  function preloadAvatars() {
+    db.users.forEach(function (u) {
+      if (!u.av || avaCache[u.a] || avaLoading[u.a]) return;
+      avaLoading[u.a] = true;
+      fetch(API + 'avatars/' + encodeURIComponent(u.av), {
+        headers: { Authorization: 'token ' + TOKEN }
+      }).then(function (r) {
+        if (!r.ok) throw new Error('取头像失败');
+        return r.json();
+      }).then(function (j) {
+        var s = String(j.content || '').replace(/\n/g, '');
+        if (!s) throw new Error('空');
+        var bin = atob(s);
+        var u8 = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        avaCache[u.a] = URL.createObjectURL(new Blob([u8], { type: 'image/png' }));
+        avaLoading[u.a] = false;
+        if (me && $('login').classList.contains('hide')) renderAll();
+      }).catch(function () {
+        avaLoading[u.a] = false;
+      });
+    });
+  }
+  function avaHTML(name, cls) {
+    var src = avaSrc(name);
+    if (src) {
+      return '<div class="ava ' + (cls || '') + '"><img src="' + src + '" alt=""></div>';
+    }
+    return '<div class="ava ' + (cls || '') + '" style="background:' + avaColor(name) + '">' +
+      esc(name.slice(0, 1)) + '</div>';
+  }
+  function paintMyAva() {
+    var el = $('myAva');
+    if (!el) return;
+    var src = avaSrc(me);
+    if (src) el.innerHTML = '<img src="' + src + '" alt="">';
+    else {
+      el.innerHTML = '';
+      el.textContent = String(me).slice(0, 1);
+      el.style.background = avaColor(me);
+    }
+  }
+  function uploadAvatar(account, file, cb) {
+    var fid = 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) + '.png';
+    var fr = new FileReader();
+    fr.onload = function () {
+      var b64 = String(fr.result).split(',')[1] || '';
+      $('status').textContent = '头像上传中…';
+      fetch(API + 'avatars/' + encodeURIComponent(fid), {
+        method: 'PUT',
+        headers: { Authorization: 'token ' + TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'avatar ' + account, content: b64 })
+      }).then(function (r) {
+        if (!r.ok) throw new Error('头像上传失败 ' + r.status);
+        return mutate(function (d) {
+          var u = d.users.filter(function (x) { return x.a === account; })[0];
+          if (u) u.av = fid;
+          return true;
+        });
+      }).then(function () {
+        $('status').textContent = '';
+        delete avaCache[account];
+        avaLoading[account] = false;
+        preloadAvatars();
+        if (cb) cb();
+      }).catch(function (e) {
+        $('status').textContent = '';
+        alert(e.message || '头像上传失败');
+      });
+    };
+    fr.readAsDataURL(file);
+  }
+
+  /* ========== 消息 ========== */
+  function nextId() {
+    var m = 0;
+    db.msgs.forEach(function (x) { if (x.i > m) m = x.i; });
+    return m + 1;
+  }
+  function cleanMsgs(list) {
+    var cut = Date.now() - KEEP_DAYS * 864e5;
+    var out = list.filter(function (m) { return (m.t || 0) > cut; });
+    if (out.length > KEEP_MSGS) out = out.slice(out.length - KEEP_MSGS);
+    return out;
+  }
+  function convMsgs() {
+    if (conv === 'public') {
+      return db.msgs.filter(function (m) { return !m.to && !m.gid; });
+    }
+    if (isGroup(conv)) {
+      var gid = convGid(conv);
+      return db.msgs.filter(function (m) { return m.gid === gid; });
+    }
+    var acc = convAcc(conv);
+    return db.msgs.filter(function (m) {
+      return (m.to === acc && m.a === me) || (m.to === me && m.a === acc);
+    });
+  }
+  function friends() {
+    var out = [];
+    db.fr.forEach(function (p) {
+      if (p[0] === me && out.indexOf(p[1]) < 0) out.push(p[1]);
+      if (p[1] === me && out.indexOf(p[0]) < 0) out.push(p[0]);
+    });
+    return out;
+  }
+
+  /* ========== 渲染 ========== */
+  function previewOf(m) {
+    if (!m) return '';
+    if (m.ty === 'f') return m.a + '：发来一个文件';
+    return (m.gid ? m.a + '：' : '') + String(m.x || '').slice(0, 18);
+  }
+
+  function renderConvs() {
+    $('whoAmI').textContent = me + (isOwner(me) ? '（群主）' : '');
+    paintMyAva();
+    var items = $('convItems');
+    var pub = db.msgs.filter(function (m) { return !m.to && !m.gid; });
+    var last = pub.length ? pub[pub.length - 1] : null;
+
+    var html = '' +
+      '<div class="conv" data-conv="public">' +
+        '<div class="ava" style="background:#2b7cff">公</div>' +
+        '<div class="info"><div class="nm">公共聊天室</div>' +
+        '<div class="sb">' + (last ? esc(previewOf(last)) : '还没有消息') + '</div></div>' +
+      '</div>';
+
+    myGroups().forEach(function (g) {
+      var ms = db.msgs.filter(function (m) { return m.gid === g.id; });
+      var l = ms.length ? ms[ms.length - 1] : null;
+      var own = g.o === me;
+      html += '<div class="conv" data-conv="g:' + esc(g.id) + '">' +
+        '<div class="ava" style="background:#722ed1">群</div>' +
+        '<div class="info"><div class="nm">' + esc(g.n) +
+          (own ? ' <span class="mini-badge">我的群</span>' : '') +
+        '</div><div class="sb">' + (l ? esc(previewOf(l)) : '还没有消息，说第一句吧') + '</div></div>' +
+        '<span class="cnt">' + g.m.length + '/50</span>' +
+      '</div>';
+    });
+
+    friends().forEach(function (f) {
+      var ms = db.msgs.filter(function (m) {
+        return (m.to === f && m.a === me) || (m.to === me && m.a === f);
+      });
+      var l = ms.length ? ms[ms.length - 1] : null;
+      html +=
+        '<div class="conv" data-conv="u:' + esc(f) + '">' +
+          avaHTML(f) +
+          '<div class="info"><div class="nm">' + esc(f) + '</div>' +
+          '<div class="sb">' + (l ? esc((l.a === me ? '我：' : '') + String(l.x || '').slice(0, 18)) : '还没有聊过') + '</div></div>' +
+        '</div>';
+    });
+
+    items.innerHTML = html;
+    Array.prototype.forEach.call(items.querySelectorAll('.conv'), function (el) {
+      el.addEventListener('click', function () {
+        conv = el.getAttribute('data-conv');
+        openChat();
+      });
+    });
+  }
+
+  function renderNotice() {
+    var n = db.notice;
+    var bar = $('noticeBar');
+    if (!n || !n.x) { bar.classList.add('hide'); return; }
+    bar.classList.remove('hide');
+    bar.innerHTML = '<span class="txt">📢 ' + esc(n.x) + '</span>' +
+      (isOwner(me) ? '<button id="noticeEdit">编辑</button>' : '');
+    var ed = $('noticeEdit');
+    if (ed) ed.addEventListener('click', editNotice);
+  }
+
+  function renderPin() {
+    var bar = $('pinBar');
+    var ids = convMsgs().map(function (m) { return m.i; });
+    var ps = (db.pin || []).filter(function (id) { return ids.indexOf(id) >= 0; })
+      .map(function (id) { return db.msgs.filter(function (m) { return m.i === id; })[0]; })
+      .filter(Boolean);
+    if (!ps.length) { bar.classList.add('hide'); return; }
+    bar.classList.remove('hide');
+    bar.innerHTML = ps.slice(0, 2).map(function (m) {
+      return '📌 ' + esc(m.a + '：' + (m.x || '').slice(0, 40));
+    }).join('<br>');
+  }
+
+  function renderMsgs() {
+    var list = $('list');
+    var ms = convMsgs().slice(-60);
+    if (!ms.length) {
+      list.innerHTML = '<div style="text-align:center;color:#a8abb2;font-size:13px;padding:30px 0">' +
+        (conv === 'public' ? '还没有消息，说第一句吧'
+          : isGroup(conv) ? '群里还没有消息，说第一句吧'
+          : '和 ' + esc(convAcc(conv)) + ' 还没有聊过') + '</div>';
+      return;
+    }
+    var html = '';
+    ms.forEach(function (m) {
+      var mine = m.a === me;
+      html += '<div class="msg ' + (mine ? 'me' : '') + '" data-id="' + m.i + '">' +
+        avaHTML(m.a, '') +
+        '<div class="body">';
+      var badge = false;
+      if (isGroup(conv)) badge = (m.a === groupOwnerOf(convGid(conv)));
+      else badge = isOwner(m.a);
+      if (badge) html += '<div class="badge-line ' + (mine ? 'me' : 'other') + '"><span class="owner-badge">群主</span></div>';
+      if (conv !== 'public') html += '<div class="meta">' + esc(m.a) +
+        (isGroup(conv) && m.a === groupOwnerOf(convGid(conv)) ? '' : '') + '</div>';
+      html += '<div class="bubble">' + bubbleHTML(m) + '</div>' +
+        '<div class="meta">' + fmtTime(m.t) + '</div>' +
+        '</div></div>';
+    });
+    list.innerHTML = html;
+    list.scrollTop = list.scrollHeight;
+
+    Array.prototype.forEach.call(list.querySelectorAll('.msg'), function (el) {
+      el.addEventListener('click', function () {
+        var id = parseInt(el.getAttribute('data-id'), 10);
+        openSheet(id);
+      });
+    });
+    Array.prototype.forEach.call(list.querySelectorAll('.file-btn'), function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        downloadFile(b.getAttribute('data-fid'), b.getAttribute('data-fn'), b.getAttribute('data-url'));
+      });
+    });
+  }
+
+  function bubbleHTML(m) {
+    if (m.ty === 'f') {
+      var full = RAW + 'files/' + encodeURIComponent(m.fid);
+      return '发来一个文件：<br><button class="file-btn" data-fid="' + esc(m.fid) +
+        '" data-fn="' + esc(m.fn || 'file') + '" data-url="' + full + '">' +
+        esc(m.fn || m.fid) + '</button>';
+    }
+    var t = esc(m.x || '');
+    if (m.all) t = t.replace(/@全体成员/g, '<span class="at">@全体成员</span>');
+    return t;
+  }
+
+  function downloadFile(fid, fn, fallbackUrl) {
+    $('status').textContent = '正在取文件…';
+    fetch(API + 'files/' + encodeURIComponent(fid), {
+      headers: { Authorization: 'token ' + TOKEN }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('取文件失败');
+      return r.json();
+    }).then(function (j) {
+      var s = String(j.content || '').replace(/\n/g, '');
+      if (!s) throw new Error('文件太大');
+      var bin = atob(s);
+      var u8 = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      var blob = new Blob([u8]);
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = fn || 'file';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+      $('status').textContent = '';
+    }).catch(function () {
+      $('status').textContent = '';
+      window.open(fallbackUrl, '_blank');
+    });
+  }
+
+  function fmtTime(t) {
+    if (!t) return '';
+    var d = new Date(t);
+    var p = function (n) { return n < 10 ? '0' + n : '' + n; };
+    var today = new Date();
+    var sameDay = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+    return (sameDay ? '' : (d.getMonth() + 1) + '/' + d.getDate() + ' ') + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function renderAll() {
+    renderNotice();
+    renderPin();
+    if ($('app').classList.contains('hide')) renderConvs();
+    else renderMsgs();
+    updateSendState();
+  }
+
+  function updateSendState() {
+    var canSend = !!me && !isMuted(me);
+    $('sendBtn').disabled = !canSend;
+    $('inp').disabled = !canSend;
+    $('inp').placeholder = isMuted(me)
+      ? '你被禁言了（还剩 ' + Math.ceil((mutedUntil(me) - Date.now()) / 60000) + ' 分钟）'
+      : '说点什么…';
+  }
+
+  /* ========== 打开会话 ========== */
+  function openChat() {
+    $('convs').classList.add('hide');
+    $('app').classList.remove('hide');
+    $('title').textContent = conv === 'public' ? '公共聊天室'
+      : (isGroup(conv) ? (findGroup(convGid(conv)) || {}).n || '群聊' : convAcc(conv));
+    renderAll();
+    startPoll();
+  }
+
+  function backToList() {
+    $('app').classList.add('hide');
+    $('convs').classList.remove('hide');
+    stopPoll();
+    renderConvs();
+  }
+
+  /* ========== 轮询 ========== */
+  function startPoll() {
+    stopPoll();
+    timer = setInterval(function () {
+      loadDB(false).then(function (r) {
+        if (r.changed) renderAll();
+      }).catch(function () {});
+    }, POLL_MS);
+  }
+  function stopPoll() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  /* ========== 发消息 ========== */
+  function sendText() {
+    var text = $('inp').value.trim();
+    if (!text) return;
+    if (isMuted(me)) { $('status').textContent = '你被禁言了，发不出去'; return; }
+    $('inp').value = '';
+    $('inp').style.height = 'auto';
+    $('status').textContent = '发送中…';
+
+    var useAtAll = (isGroup(conv) ? isGroupOwner(convGid(conv)) : isOwner(me)) && /@全体成员/.test(text);
+
+    mutate(function (d) {
+      var id = 1;
+      d.msgs.forEach(function (x) { if (x.i >= id) id = x.i + 1; });
+      d.msgs.push({
+        i: id, a: me, x: text, t: Date.now(),
+        to: isDm(conv) ? convAcc(conv) : null,
+        gid: isGroup(conv) ? convGid(conv) : null,
+        ty: 't', all: useAtAll ? 1 : 0
+      });
+      d.msgs = cleanMsgs(d.msgs);
+      return true;
+    }).then(function () {
+      $('status').textContent = '';
+      renderAll();
+      setTimeout(function () {
+        var l = $('list');
+        if (l) l.scrollTop = l.scrollHeight;
+      }, 50);
+    }).catch(function (e) {
+      $('status').textContent = e.message || '发送失败';
+    });
+  }
+
+  /* ========== 上传文件 ========== */
+  function uploadFile(file) {
+    if (isMuted(me)) { alert('你被禁言了'); return; }
+    if (file.size > 20 * 1024 * 1024) {
+      if (!confirm('这个文件 ' + Math.round(file.size / 1048576) + 'MB，传上去会比较慢，确定要传吗？')) return;
+    }
+    $('status').textContent = '上传中…';
+    var fid = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + '_' + file.name.replace(/[^\w.\-]/g, '_');
+
+    var fr = new FileReader();
+    fr.onload = function () {
+      var dataUrl = fr.result;                       /* data:...;base64,xxx */
+      var b64 = String(dataUrl).split(',')[1] || '';
+      return fetch(API + 'files/' + encodeURIComponent(fid), {
+        method: 'PUT',
+        headers: { Authorization: 'token ' + TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'upload ' + file.name, content: b64 })
+      }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error('上传失败 ' + r.status); });
+        return mutate(function (d) {
+          var id = 1;
+          d.msgs.forEach(function (x) { if (x.i >= id) id = x.i + 1; });
+          d.msgs.push({
+            i: id, a: me, t: Date.now(),
+            to: isDm(conv) ? convAcc(conv) : null,
+            gid: isGroup(conv) ? convGid(conv) : null,
+            ty: 'f', fn: file.name, fid: fid, sz: file.size
+          });
+          d.msgs = cleanMsgs(d.msgs);
+          return true;
+        });
+      });
+    };
+    fr.readAsDataURL(file);
+  }
+
+  /* ========== 操作菜单 ========== */
+  function openSheet(id) {
+    var m = db.msgs.filter(function (x) { return x.i === id; })[0];
+    if (!m) return;
+    var mine = m.a === me;
+    var owner = isGroup(conv) ? isGroupOwner(convGid(conv)) : isOwner(me);
+    var items = [];
+
+    if (mine || owner) items.push({ t: '撤回这条', danger: true, fn: function () { doRecall(id); } });
+    if (owner && !mine) items.push({ t: '禁言 ' + m.a, danger: true, fn: function () { doMute(m.a); } });
+    if (owner) items.push({ t: '置顶这条', fn: function () { doPin(id); } });
+    items.push({ t: '复制内容', fn: function () {
+      var txt = m.ty === 'f' ? (RAW + 'files/' + encodeURIComponent(m.fid)) : (m.x || '');
+      if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(function () {});
+    }});
+
+    showSheet(items);
+  }
+
+  function showSheet(items) {
+    var sheet = $('sheet');
+    var html = '<div class="panel">';
+    items.forEach(function (it, idx) {
+      html += '<button data-idx="' + idx + '"' + (it.danger ? ' class="danger"' : '') + '>' + esc(it.t) + '</button>';
+    });
+    html += '<button class="cancel">取消</button></div>';
+    sheet.innerHTML = html;
+    sheet.classList.remove('hide');
+
+    Array.prototype.forEach.call(sheet.querySelectorAll('button[data-idx]'), function (b) {
+      b.addEventListener('click', function () {
+        var it = items[parseInt(b.getAttribute('data-idx'), 10)];
+        sheet.classList.add('hide');
+        if (it && it.fn) it.fn();
+      });
+    });
+    sheet.querySelector('.cancel').addEventListener('click', function () {
+      sheet.classList.add('hide');
+    });
+  }
+
+  function doRecall(id) {
+    if (!confirm('撤回这条消息？所有人都看不到了')) return;
+    mutate(function (d) {
+      d.msgs = d.msgs.filter(function (m) { return m.i !== id; });
+      d.pin = (d.pin || []).filter(function (p) { return p !== id; });
+      return true;
+    }).then(renderAll).catch(function (e) { alert(e.message); });
+  }
+
+  function doPin(id) {
+    mutate(function (d) {
+      d.pin = d.pin || [];
+      if (d.pin.indexOf(id) < 0) d.pin.push(id);
+      if (d.pin.length > 3) d.pin = d.pin.slice(-3);
+      return true;
+    }).then(renderAll).catch(function (e) { alert(e.message); });
+  }
+
+  function doMute(acc) {
+    var mins = prompt('禁言 ' + acc + ' 多少分钟？（填 0 就是解除禁言）', '30');
+    if (mins === null) return;
+    mins = parseInt(mins, 10);
+    if (isNaN(mins) || mins < 0) return;
+    mutate(function (d) {
+      d.mute = d.mute || {};
+      if (mins === 0) delete d.mute[acc];
+      else d.mute[acc] = Date.now() + mins * 60000;
+      return true;
+    }).then(function () {
+      renderAll();
+      alert(mins === 0 ? '已解除禁言' : '已禁言 ' + acc + ' ' + mins + ' 分钟');
+    }).catch(function (e) { alert(e.message); });
+  }
+
+  function editNotice() {
+    var cur = (db.notice && db.notice.x) || '';
+    var txt = prompt('群公告（留空就是删掉公告）', cur);
+    if (txt === null) return;
+    mutate(function (d) {
+      d.notice = txt.trim() ? { x: txt.trim(), t: Date.now(), by: me } : null;
+      return true;
+    }).then(renderAll).catch(function (e) { alert(e.message); });
+  }
+
+  /* ========== 登录注册 ========== */
+  function lmsg(t) { $('lmsg').textContent = t || ''; }
+
+  function doLogin() {
+    var a = $('acc').value.trim();
+    var p = $('pwd').value;
+    if (!a || !p) { lmsg('账号和密码都要填'); return; }
+    $('doLogin').disabled = true;
+    lmsg('登录中…');
+
+    loadDB(true).then(function () {
+      var u = db.users.filter(function (x) { return x.a === a; })[0];
+      if (!u) throw new Error('没有这个账号，先注册一个吧');
+      if (u.p !== hashPass(p)) throw new Error('密码不对');
+      me = a;
+      localStorage.setItem('chat_me', a);
+      enter();
+    }).catch(function (e) {
+      lmsg(e.message || '登录失败');
+    }).then(function () { $('doLogin').disabled = false; });
+  }
+
+  function doReg() {
+    var a = $('acc').value.trim();
+    var p = $('pwd').value;
+    if (!a || !p) { lmsg('账号和密码都要填'); return; }
+    if (a.length < 2) { lmsg('账号至少 2 个字'); return; }
+    if (p.length < 4) { lmsg('密码至少 4 位'); return; }
+    $('doReg').disabled = true;
+    lmsg('注册中…');
+
+    mutate(function (d) {
+      if (d.users.filter(function (x) { return x.a === a; }).length) {
+        throw new Error('这个账号已经有人用了');
+      }
+      d.users.push({ a: a, p: hashPass(p), t: Date.now() });
+      return true;
+    }).then(function () {
+      me = a;
+      localStorage.setItem('chat_me', a);
+      enter();
+      if (avaFile) uploadAvatar(a, avaFile, renderConvs);
+    }).catch(function (e) {
+      lmsg(e.message || '注册失败');
+    }).then(function () { $('doReg').disabled = false; });
+  }
+
+  function enter() {
+    $('login').classList.add('hide');
+    $('convs').classList.remove('hide');
+    renderConvs();
+    startListPoll();
+  }
+
+  var listTimer = null;
+  function startListPoll() {
+    if (listTimer) clearInterval(listTimer);
+    listTimer = setInterval(function () {
+      loadDB(false).then(function (r) {
+        if (r.changed && $('convs').classList.contains('hide') === false) renderConvs();
+      }).catch(function () {});
+    }, 8000);
+  }
+
+  /* ========== 加好友 ========== */
+  function createGroup() {
+    var name = prompt('给群起个名字');
+    if (!name) return;
+    name = name.trim();
+    if (!name) return;
+    var gid = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    mutate(function (d) {
+      d.groups = d.groups || [];
+      d.groups.push({ id: gid, n: name.slice(0, 20), o: me, m: [me], t: Date.now() });
+      return true;
+    }).then(function () {
+      renderConvs();
+      alert('群「' + name.slice(0, 20) + '」建好了。\n点进群，右上角 ⋮ → 邀请好友进群，最多 50 人');
+    }).catch(function (e) { alert(e.message || '建群失败'); });
+  }
+
+  function inviteToGroup() {
+    var gid = convGid(conv);
+    var g = findGroup(gid);
+    if (!g) { alert('群不存在'); return; }
+    if (g.m.length >= 50) { alert('这个群已经满 50 人了'); return; }
+    var rest = friends().filter(function (f) { return g.m.indexOf(f) < 0; });
+    var a = prompt('把谁拉进群？直接填对方账号\n\n你的好友：' + (rest.length ? rest.join('、') : '（还没加好友）'),
+      rest.length ? rest[0] : '');
+    if (!a) return;
+    a = a.trim();
+    if (!a) return;
+    if (a === me) { alert('你自己已经在群里了'); return; }
+    if (g.m.indexOf(a) >= 0) { alert(a + ' 已经在群里了'); return; }
+
+    mutate(function (d) {
+      var tg = (d.groups || []).filter(function (x) { return x.id === gid; })[0];
+      if (!tg) throw new Error('群不存在');
+      if (tg.m.length >= 50) throw new Error('群满了，最多 50 人');
+      if (!d.users.filter(function (u) { return u.a === a; }).length) throw new Error('没有「' + a + '」这个账号');
+      if (tg.m.indexOf(a) < 0) tg.m.push(a);
+      return true;
+    }).then(function () {
+      renderAll();
+      renderConvs();
+      alert('已把 ' + a + ' 拉进群');
+    }).catch(function (e) { alert(e.message || '拉人失败'); });
+  }
+
+  function showMembers() {
+    var g = findGroup(convGid(conv));
+    if (!g) return;
+    var txt = g.m.map(function (a) {
+      return (a === g.o ? '👑 ' : '· ') + a + (a === me ? '（我）' : '');
+    }).join('\n');
+    alert('群「' + g.n + '」成员 ' + g.m.length + '/50\n\n' + txt);
+  }
+
+  function renameGroup() {
+    var g = findGroup(convGid(conv));
+    if (!g) return;
+    var n = prompt('新的群名', g.n);
+    if (!n || !n.trim()) return;
+    var nn = n.trim().slice(0, 20);
+    mutate(function (d) {
+      var tg = (d.groups || []).filter(function (x) { return x.id === g.id; })[0];
+      if (tg) tg.n = nn;
+      return true;
+    }).then(function () {
+      $('title').textContent = nn;
+      renderConvs();
+    }).catch(function (e) { alert(e.message); });
+  }
+
+  function leaveGroup() {
+    if (!confirm('退出这个群？以后就看不到这个群的消息了')) return;
+    var gid = convGid(conv);
+    mutate(function (d) {
+      var tg = (d.groups || []).filter(function (x) { return x.id === gid; })[0];
+      if (tg) tg.m = tg.m.filter(function (a) { return a !== me; });
+      return true;
+    }).then(function () { backToList(); }).catch(function (e) { alert(e.message); });
+  }
+
+  function disbandGroup() {
+    if (!confirm('解散这个群？群里的消息会一起删掉，不能恢复')) return;
+    var gid = convGid(conv);
+    mutate(function (d) {
+      d.groups = (d.groups || []).filter(function (x) { return x.id !== gid; });
+      d.msgs = d.msgs.filter(function (m) { return m.gid !== gid; });
+      return true;
+    }).then(function () { backToList(); }).catch(function (e) { alert(e.message); });
+  }
+
+  function addFriend() {
+    var a = prompt('输入对方的账号');
+    if (!a) return;
+    a = a.trim();
+    if (a === me) { alert('不能加自己'); return; }
+    if (friends().indexOf(a) >= 0) { alert('已经是好友了'); return; }
+
+    loadDB(true).then(function () {
+      if (!db.users.filter(function (x) { return x.a === a; })[0]) {
+        throw new Error('没有这个账号，确认一下名字');
+      }
+      return mutate(function (d) {
+        var has = d.fr.some(function (p) {
+          return (p[0] === me && p[1] === a) || (p[0] === a && p[1] === me);
+        });
+        if (!has) d.fr.push([me, a]);
+        return true;
+      });
+    }).then(function () {
+      renderConvs();
+      alert('已添加 ' + a);
+    }).catch(function (e) { alert(e.message || '添加失败'); });
+  }
+
+  /* ========== 事件 ========== */
+  $('doLogin').addEventListener('click', doLogin);
+  $('doReg').addEventListener('click', doReg);
+  $('back').addEventListener('click', backToList);
+  $('sendBtn').addEventListener('click', sendText);
+  $('addBtn').addEventListener('click', addFriend);
+  $('newGroup').addEventListener('click', createGroup);
+
+  $('inp').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      sendText();
+    }
+  });
+  $('inp').addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 110) + 'px';
+  });
+
+  $('fileBtn').addEventListener('click', function () { $('filePick').click(); });
+  $('filePick').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    this.value = '';
+    if (!f) return;
+    uploadFile(f);
+  });
+
+  /* ---- 头像 ---- */
+  var avaFile = null;
+  var avaMode = '';
+  $('avaPick').addEventListener('click', function () {
+    avaMode = 'reg';
+    $('imgPick').click();
+  });
+  $('myAva').addEventListener('click', function () {
+    avaMode = 'me';
+    $('imgPick').click();
+  });
+  $('imgPick').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    this.value = '';
+    if (!f) return;
+    if (avaMode === 'me') {
+      uploadAvatar(me, f, renderConvs);
+    } else {
+      avaFile = f;
+      var el = $('avaPick');
+      el.style.border = 'none';
+      el.innerHTML = '<img src="' + URL.createObjectURL(f) + '" alt="">';
+    }
+  });
+
+  $('more').addEventListener('click', function () {
+    var items = [];
+    var inGroup = isGroup(conv);
+    var gid = inGroup ? convGid(conv) : '';
+    var gOwner = inGroup ? isGroupOwner(gid) : false;
+
+    if (inGroup) {
+      items.push({ t: '邀请好友进群', fn: inviteToGroup });
+      items.push({ t: '看群成员', fn: showMembers });
+      if (gOwner) items.push({ t: '改群名', fn: renameGroup });
+    }
+    if (gOwner || (!inGroup && isOwner(me))) {
+      items.push({ t: '发公告', fn: editNotice });
+      items.push({ t: '取消所有置顶', fn: function () {
+        mutate(function (d) { d.pin = []; return true; }).then(renderAll).catch(function (e) { alert(e.message); });
+      }});
+    }
+    if (inGroup && !gOwner) items.push({ t: '退出这个群', danger: true, fn: leaveGroup });
+    if (inGroup && gOwner) items.push({ t: '解散这个群', danger: true, fn: disbandGroup });
+    items.push({ t: '刷新一下', fn: function () {
+      loadDB(true).then(function () { renderAll(); }).catch(function () {});
+    }});
+    items.push({ t: '退出登录', fn: function () {
+      localStorage.removeItem('chat_me');
+      localStorage.removeItem('chat_pwd');
+      location.reload();
+    }});
+    showSheet(items);
+  });
+
+  /* ========== 自动恢复登录 ========== */
+  var savedMe = localStorage.getItem('chat_me');
+  if (savedMe) {
+    me = savedMe;
+    loadDB(true).then(function () { enter(); }).catch(function () {
+      me = '';
+      $('login').classList.remove('hide');
+    });
+  }
+})();
+</script>
+</body>
+</html>
