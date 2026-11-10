@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no,email=no,address=no">
+<meta name="theme-color" content="#1f6feb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>聊天室</title>
+<link rel="icon" href="data:,">
+<style>
+  /* ---------- 基础与移动端适配 ---------- */
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    color: #1f2329;
+    background: #f2f3f5;
+    overflow: hidden;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    touch-action: manipulation;
+  }
+  /* 用 fixed 铺满视口，避免手机浏览器地址栏 / 键盘收缩引起的高度抖动与错乱 */
+  #app {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .view {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .hidden { display: none !important; }
+  input, textarea, button {
+    font-family: inherit;
+    font-size: 16px; /* 不小于 16px，避免 iOS 聚焦自动放大 */
+    color: inherit;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0;
+  }
+  input:focus, textarea:focus { outline: none; }
+
+  /* ---------- 登录 / 注册 ---------- */
+  #authView {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: calc(16px + env(safe-area-inset-top)) 20px
+             calc(16px + env(safe-area-inset-bottom)) 20px;
+    background: linear-gradient(180deg, #eef4ff 0%, #f2f3f5 60%);
+  }
+  .auth-card {
+    margin: auto;                 /* 垂直居中且内容超出时可滚动，比 justify-content 更稳 */
+    width: 100%;
+    max-width: 380px;
+    background: #fff;
+    border-radius: 18px;
+    padding: 26px 20px 22px;
+    box-shadow: 0 6px 26px rgba(31, 35, 41, .08);
+  }
+  .brand { text-align: center; margin-bottom: 20px; }
+  .brand .logo {
+    width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 12px;
+    background: #1f6feb; color: #fff; font-size: 26px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+  .brand p { font-size: 13px; color: #8a9099; margin: 0; }
+
+  .tabs { display: flex; background: #f2f3f5; border-radius: 12px; padding: 4px; margin-bottom: 20px; }
+  .tabs button {
+    flex: 1 1 0; height: 38px; border: 0; background: transparent; color: #4e5969;
+    font-size: 15px; font-weight: 500; border-radius: 9px;
+  }
+  .tabs button.active { background: #fff; color: #1f6feb; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: #646a73; margin-bottom: 6px; }
+  .field input {
+    display: block; width: 100%; height: 46px; padding: 0 14px;
+    border: 1px solid #dcdfe6; border-radius: 10px; background: #fff;
+  }
+  .field input:focus { border-color: #1f6feb; box-shadow: 0 0 0 3px rgba(31,111,235,.12); }
+  .rule { font-size: 12px; color: #8a9099; margin: -8px 0 14px; }
+
+  .btn {
+    display: block; width: 100%; height: 46px; border: 0; border-radius: 10px;
+    font-size: 16px; font-weight: 600; background: #1f6feb; color: #fff;
+  }
+  .btn:active { opacity: .86; }
+  .btn:disabled { opacity: .5; }
+  .form-msg { font-size: 13px; color: #e5484d; min-height: 18px; margin: 10px 0 0; text-align: center; }
+  .form-msg.ok { color: #2fbf71; }
+
+  /* ---------- 聊天 ---------- */
+  #chatView { background: #f2f3f5; }
+  .topbar {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    background: #fff;
+    border-bottom: 1px solid #e5e6eb;
+  }
+  .topbar .title { flex: 1 1 auto; min-width: 0; }
+  .topbar .title .name {
+    font-size: 16px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .topbar .title .sub {
+    font-size: 12px; color: #8a9099;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9cdd4; flex: 0 0 auto; }
+  .dot.on { background: #2fbf71; }
+  .dot.wait { background: #ffb020; }
+  .ghost-btn {
+    flex: 0 0 auto; height: 32px; padding: 0 12px; border: 1px solid #dcdfe6;
+    background: #fff; color: #4e5969; font-size: 13px; border-radius: 16px;
+  }
+  .ghost-btn:active { background: #f2f3f5; }
+
+  #msgList {
+    flex: 1 1 auto;
+    min-height: 0;             /* 关键：允许在 flex 中收缩并出现滚动 */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px 12px 4px;
+  }
+  .empty-tip { text-align: center; color: #a5aab3; font-size: 13px; padding: 40px 0; }
+  .day-sep { text-align: center; margin: 6px 0 12px; }
+  .day-sep span {
+    display: inline-block; font-size: 11px; color: #8a9099;
+    background: rgba(0,0,0,.05); border-radius: 10px; padding: 2px 10px;
+  }
+  .msg-row { display: flex; flex-direction: column; margin-bottom: 12px; }
+  .msg-row.me { align-items: flex-end; }
+  .msg-row.other { align-items: flex-start; }
+  .meta { font-size: 11px; color: #8a9099; margin: 0 4px 4px; }
+  .bubble {
+    max-width: 78%;
+    padding: 9px 12px;
+    border-radius: 14px;
+    font-size: 15px;
+    line-height: 1.45;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .msg-row.other .bubble { background: #fff; color: #1f2329; border-top-left-radius: 4px; }
+  .msg-row.me .bubble { background: #1f6feb; color: #fff; border-top-right-radius: 4px; }
+  .bubble.pending { opacity: .55; }
+  .bubble.failed { background: #fdecec; color: #e5484d; }
+
+  .composer {
+    flex: 0 0 auto;
+    display: flex; align-items: flex-end; gap: 8px;
+    padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid #e5e6eb;
+  }
+  #input {
+    flex: 1 1 auto; min-width: 0;
+    height: 42px; max-height: 96px; padding: 10px 14px;
+    border: 1px solid #dcdfe6; border-radius: 21px;
+    background: #fff; resize: none; overflow-y: auto;
+    font-size: 16px; line-height: 20px;
+  }
+  #input:focus { border-color: #1f6feb; }
+  #sendBtn {
+    flex: 0 0 auto; height: 42px; min-width: 64px; padding: 0 16px;
+    border: 0; border-radius: 21px; background: #1f6feb; color: #fff;
+    font-size: 15px; font-weight: 600;
+  }
+  #sendBtn:active { opacity: .86; }
+  #sendBtn:disabled { background: #c9cdd4; }
+
+  /* ---------- 轻提示 ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: 15%;
+    transform: translateX(-50%) translateY(10px);
+    max-width: 80vw; padding: 9px 16px; border-radius: 20px;
+    background: rgba(0,0,0,.78); color: #fff; font-size: 14px;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    z-index: 99; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 登录 / 注册 ===== -->
+  <section id="authView" class="view">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="logo">聊</div>
+        <h1>聊天室</h1>
+        <p>账号登录，消息实时同步</p>
+      </div>
+
+      <div class="tabs">
+        <button id="tabLogin" type="button" class="active">登录</button>
+        <button id="tabRegister" type="button">注册</button>
+      </div>
+
+      <form id="authForm" autocomplete="off">
+        <div class="field">
+          <label for="account">账号</label>
+          <input id="account" name="account" type="text" maxlength="32"
+                 placeholder="1-16 个字符" autocapitalize="off"
+                 autocorrect="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="password">密码</label>
+          <input id="password" name="password" type="password" inputmode="numeric"
+                 pattern="[0-9]*" maxlength="20" placeholder="8-20 位数字">
+        </div>
+        <p class="rule">账号 1-16 个字符；密码只能为数字，8-20 位。</p>
+        <button id="submitBtn" class="btn" type="submit">登录</button>
+        <p id="formMsg" class="form-msg"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===== 聊天 ===== -->
+  <section id="chatView" class="view hidden">
+    <header class="topbar">
+      <div class="title">
+        <div class="name">公共聊天室</div>
+        <div class="sub">
+          <span id="statusDot" class="dot"></span>
+          <span id="statusText">未连接</span>
+          <span>·</span>
+          <span id="onlineText">在线 0 人</span>
+          <span>·</span>
+          <span id="meText"></span>
+        </div>
+      </div>
+      <button id="logoutBtn" class="ghost-btn" type="button">退出</button>
+    </header>
+
+    <main id="msgList">
+      <div class="empty-tip" id="emptyTip">还没有消息，说点什么吧</div>
+    </main>
+
+    <footer class="composer">
+      <textarea id="input" rows="1" maxlength="2000"
+                placeholder="输入消息…" enterkeyhint="send"></textarea>
+      <button id="sendBtn" type="button" disabled>发送</button>
+    </footer>
+  </section>
+
+</div>
+<div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ============================================================
+   * 配置：后端服务地址
+   *  - 留空（推荐）：表示“与网页同源”，即前端由后端一起托管，
+   *    直接打开后端地址（http(s)://你的域名/）即可，无需跨域。
+   *  - 若把本地 HTML 直接打包进 APK（file:// 打开），
+   *    请在此填写后端地址，例如 'https://chat.example.com'
+   * ============================================================ */
+  var SERVER_URL = '';
+
+  var TOKEN_KEY = 'chat_token';
+  var ACCOUNT_KEY = 'chat_account';
+  var MAX_TEXT = 2000;
+
+  /* ---------------- 基础工具 ---------------- */
+  function $(id) { return document.getElementById(id); }
+
+  function getBase() {
+    if (SERVER_URL) return String(SERVER_URL).replace(/\/+$/, '');
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+      return location.origin;
+    }
+    return '';
+  }
+  var BASE = getBase();
+
+  function wsEndpoint() {
+    if (!BASE) return '';
+    return BASE.replace(/^http/i, 'ws') + '/ws';
+  }
+
+  function toast(text) {
+    var el = $('toast');
+    el.textContent = text;
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.classList.remove('show'); }, 2000);
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+  function timeText(ts) {
+    var d = new Date(ts);
+    return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+  function dayText(ts) {
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  /* ---------------- 校验规则（与服务端一致） ---------------- */
+  function checkAccount(raw) {
+    var a = (raw || '').trim();
+    if (!a) return '请输入账号';
+    if (Array.from(a).length > 16) return '账号最多 16 个字符';
+    if (/\s/.test(a)) return '账号不能包含空格';
+    return '';
+  }
+  function checkPassword(pw) {
+    var p = pw == null ? '' : String(pw);
+    if (!p) return '请输入密码';
+    if (!/^[0-9]+$/.test(p)) return '密码只能使用数字';
+    if (p.length < 8) return '密码至少 8 位数字';
+    if (p.length > 20) return '密码最多 20 位数字';
+    return '';
+  }
+
+  /* ---------------- 请求封装 ---------------- */
+  function request(path, opt) {
+    opt = opt || {};
+    if (!BASE) return Promise.reject(new Error('未配置后端地址'));
+    var headers = { 'Content-Type': 'application/json' };
+    if (opt.token) headers['Authorization'] = 'Bearer ' + opt.token;
+    return fetch(BASE + path, {
+      method: opt.method || 'GET',
+      headers: headers,
+      body: opt.body ? JSON.stringify(opt.body) : undefined
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok || (data && data.ok === false)) {
+          throw new Error((data && data.error) || ('请求失败（' + res.status + '）'));
+        }
+        return data;
+      });
+    });
+  }
+
+  /* ---------------- 状态 ---------------- */
+  var state = {
+    mode: 'login',
+    token: localStorage.getItem(TOKEN_KEY) || '',
+    account: localStorage.getItem(ACCOUNT_KEY) || '',
+    ws: null,
+    online: 0,
+    messages: {},      // id -> 消息对象
+    byClientId: {},    // clientId -> DOM 节点
+    renderedDay: '',
+    reconnectDelay: 1000,
+    manualClose: false,
+    lastMessageAt: 0
+  };
+
+  /* ---------------- 视图切换 ---------------- */
+  function showAuth() {
+    $('authView').classList.remove('hidden');
+    $('chatView').classList.add('hidden');
+  }
+  function showChat() {
+    $('authView').classList.add('hidden');
+    $('chatView').classList.remove('hidden');
+    $('meText').textContent = state.account ? ('我：' + state.account) : '';
+  }
+
+  /* ---------------- 连接状态展示 ---------------- */
+  function setStatus(text, kind) {
+    $('statusText').textContent = text;
+    var dot = $('statusDot');
+    dot.className = 'dot' + (kind ? ' ' + kind : '');
+  }
+  function setOnline(n) {
+    state.online = n || 0;
+    $('onlineText').textContent = '在线 ' + state.online + ' 人';
+  }
+
+  /* ---------------- 登录 / 注册 ---------------- */
+  function setMode(mode) {
+    state.mode = mode;
+    var isLogin = mode === 'login';
+    $('tabLogin').className = isLogin ? 'active' : '';
+    $('tabRegister').className = isLogin ? '' : 'active';
+    $('submitBtn').textContent = isLogin ? '登录' : '注册并登录';
+    $('formMsg').textContent = '';
+    $('formMsg').className = 'form-msg';
+  }
+
+  $('tabLogin').addEventListener('click', function () { setMode('login'); });
+  $('tabRegister').addEventListener('click', function () { setMode('register'); });
+
+  $('authForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var account = $('account').value.trim();
+    var password = $('password').value;
+    var msg = $('formMsg');
+    msg.className = 'form-msg';
+
+    var err = checkAccount(account);
+    if (err) { msg.textContent = err; return; }
+    err = checkPassword(password);
+    if (err) { msg.textContent = err; return; }
+
+    if (!BASE) {
+      msg.textContent = '未配置后端地址，请在 HTML 顶部设置 SERVER_URL';
+      return;
+    }
+
+    var path = state.mode === 'login' ? '/api/login' : '/api/register';
+    $('submitBtn').disabled = true;
+    msg.textContent = '请稍候…';
+    msg.className = 'form-msg ok';
+
+    request(path, { method: 'POST', body: { account: account, password: password } })
+      .then(function (data) {
+        state.token = data.token;
+        state.account = data.account || account;
+        localStorage.setItem(TOKEN_KEY, state.token);
+        localStorage.setItem(ACCOUNT_KEY, state.account);
+        $('password').value = '';
+        msg.textContent = '';
+        enterChat();
+      })
+      .catch(function (e2) {
+        msg.className = 'form-msg';
+        msg.textContent = e2.message || '操作失败';
+      })
+      .then(function () {
+        $('submitBtn').disabled = false;
+      });
+  });
+
+  /* ---------------- 进入聊天 ---------------- */
+  function enterChat() {
+    showChat();
+    setOnline(0);
+    setStatus('连接中…', 'wait');
+    updateSendState();
+    connect();
+  }
+
+  /* ---------------- WebSocket ---------------- */
+  function connect() {
+    var url = wsEndpoint();
+    if (!url) {
+      setStatus('未配置后端地址', '');
+      return;
+    }
+    state.manualClose = false;
+    var ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      scheduleReconnect();
+      return;
+    }
+    state.ws = ws;
+
+    ws.onopen = function () {
+      setStatus('连接中…', 'wait');
+      ws.send(JSON.stringify({ type: 'auth', token: state.token }));
+    };
+
+    ws.onmessage = function (ev) {
+      var data;
+      try { data = JSON.parse(ev.data); } catch (e) { return; }
+      handleServerMessage(data);
+    };
+
+    ws.onclose = function () {
+      state.ws = null;
+      updateSendState();
+      if (state.manualClose) return;
+      setStatus('已断开，重连中…', 'wait');
+      scheduleReconnect();
+    };
+
+    ws.onerror = function () { /* onclose 会接管 */ };
+  }
+
+  function scheduleReconnect() {
+    if (state.manualClose) return;
+    var delay = state.reconnectDelay;
+    state.reconnectDelay = Math.min(delay * 1.6, 10000);
+    setTimeout(function () {
+      if (!state.manualClose) connect();
+    }, delay);
+  }
+
+  function handleServerMessage(data) {
+    switch (data.type) {
+      case 'ready':
+        state.account = data.account || state.account;
+        localStorage.setItem(ACCOUNT_KEY, state.account);
+        $('meText').textContent = '我：' + state.account;
+        state.reconnectDelay = 1000;
+        setStatus('已连接', 'on');
+        resetMessages((data.messages || []));
+        setOnline(data.online);
+        updateSendState();
+        break;
+
+      case 'auth_failed':
+        state.manualClose = true;
+        if (state.ws) { try { state.ws.close(); } catch (e) {} }
+        state.ws = null;
+        logout(true);
+        toast(data.error || '登录已失效，请重新登录');
+        break;
+
+      case 'message':
+        appendMessage(data.message);
+        setOnline(data.online != null ? data.online : state.online);
+        break;
+
+      case 'presence':
+        setOnline(data.online);
+        break;
+
+      case 'history':
+        resetMessages(data.messages || []);
+        break;
+
+      case 'error':
+        toast(data.error || '操作失败');
+        break;
+
+      case 'pong':
+        break;
+    }
+  }
+
+  function updateSendState() {
+    var ready = !!(state.ws && state.ws.readyState === 1);
+    $('sendBtn').disabled = !ready;
+  }
+
+  /* ---------------- 消息渲染 ---------------- */
+  function resetMessages(list) {
+    var box = $('msgList');
+    box.innerHTML = '<div class="empty-tip" id="emptyTip">还没有消息，说点什么吧</div>';
+    state.messages = {};
+    state.byClientId = {};
+    state.renderedDay = '';
+    list.forEach(function (m) { appendMessage(m, true); });
+    scrollToBottom(true);
+  }
+
+  function ensureDaySep(ts) {
+    var day = dayText(ts);
+    if (day === state.renderedDay) return;
+    state.renderedDay = day;
+    var sep = document.createElement('div');
+    sep.className = 'day-sep';
+    var span = document.createElement('span');
+    span.textContent = day;
+    sep.appendChild(span);
+    insertBeforeTip(sep);
+  }
+
+  function insertBeforeTip(node) {
+    var box = $('msgList');
+    if (!box) return;
+    var tip = $('emptyTip');
+    if (tip) { box.insertBefore(node, tip); } else { box.appendChild(node); }
+    if (tip) tip.classList.add('hidden');
+  }
+
+  function buildRow(message) {
+    var mine = message.account === state.account;
+    var row = document.createElement('div');
+    row.className = 'msg-row ' + (mine ? 'me' : 'other');
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = (mine ? '' : message.account + ' · ') + timeText(message.createdAt);
+
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = message.text;
+
+    row.appendChild(meta);
+    row.appendChild(bubble);
+    return row;
+  }
+
+  function appendMessage(message, isHistory) {
+    if (!message || typeof message.id === 'undefined') return;
+
+    /* 自己发出的消息：用服务端回执替换本地“发送中”的气泡 */
+    if (message.clientId && state.byClientId[message.clientId]) {
+      var old = state.byClientId[message.clientId];
+      var mine = message.account === state.account;
+      var fresh = buildRow(message);
+      /* 只替换这一条“发送中”的气泡本身，绝不能动它的父容器 */
+      if (old.parentNode) {
+        old.parentNode.replaceChild(fresh, old);
+      } else {
+        insertBeforeTip(fresh);
+      }
+      delete state.byClientId[message.clientId];
+      state.messages[message.id] = message;
+      if (mine) state.lastMessageAt = message.createdAt;
+      scrollToBottom();
+      return;
+    }
+
+    if (state.messages[message.id]) return; // 去重
+    state.messages[message.id] = message;
+
+    ensureDaySep(message.createdAt);
+    insertBeforeTip(buildRow(message));
+    state.lastMessageAt = message.createdAt;
+    scrollToBottom();
+  }
+
+  function appendPending(text, clientId) {
+    ensureDaySep(Date.now());
+    var row = document.createElement('div');
+    row.className = 'msg-row me';
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = timeText(Date.now());
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble pending';
+    bubble.textContent = text;
+    row.appendChild(meta);
+    row.appendChild(bubble);
+    insertBeforeTip(row);
+    state.byClientId[clientId] = row;
+    scrollToBottom();
+  }
+
+  function isNearBottom() {
+    var box = $('msgList');
+    if (!box) return true;
+    return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  }
+  function scrollToBottom(force) {
+    var box = $('msgList');
+    if (!box) return;
+    if (force || isNearBottom()) {
+      box.scrollTop = box.scrollHeight;
+    }
+  }
+
+  /* ---------------- 发送消息 ---------------- */
+  function send() {
+    var ta = $('input');
+    var text = ta.value.replace(/\r\n/g, '\n').trim();
+    if (!text) return;
+    if (Array.from(text).length > MAX_TEXT) {
+      toast('消息不能超过 ' + MAX_TEXT + ' 个字符');
+      return;
+    }
+    if (!state.ws || state.ws.readyState !== 1) {
+      toast('尚未连接，请稍候重试');
+      return;
+    }
+    var clientId = 'c' + Date.now() + Math.random().toString(36).slice(2, 8);
+    appendPending(text, clientId);
+    try {
+      state.ws.send(JSON.stringify({ type: 'send', text: text, clientId: clientId }));
+    } catch (e) {
+      toast('发送失败，请重试');
+      return;
+    }
+    ta.value = '';
+    autoGrow(ta);
+    scrollToBottom(true);
+  }
+
+  $('sendBtn').addEventListener('click', send);
+
+  var input = $('input');
+  function autoGrow(ta) {
+    if (!ta) return;
+    ta.style.height = '42px';
+    var h = Math.min(ta.scrollHeight, 96);
+    ta.style.height = Math.max(h, 42) + 'px';
+  }
+  input.addEventListener('input', function () { autoGrow(input); });
+  input.addEventListener('keydown', function (e) {
+    var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    if (e.key === 'Enter' && !e.shiftKey && !isTouch) {
+      e.preventDefault();
+      send();
+    }
+  });
+
+  /* ---------------- 退出登录 ---------------- */
+  function logout(silent) {
+    state.manualClose = true;
+    if (state.ws) { try { state.ws.close(); } catch (e) {} }
+    state.ws = null;
+    var token = state.token;
+    state.token = '';
+    state.account = '';
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ACCOUNT_KEY);
+    if (token && BASE) {
+      request('/api/logout', { method: 'POST', token: token }).catch(function () {});
+    }
+    state.messages = {};
+    state.byClientId = {};
+    state.renderedDay = '';
+    $('account').value = '';
+    $('password').value = '';
+    setMode('login');
+    showAuth();
+    setStatus('未连接', '');
+    if (!silent) toast('已退出登录');
+  }
+  $('logoutBtn').addEventListener('click', function () { logout(false); });
+
+  /* ---------------- 启动 ---------------- */
+  function boot() {
+    if (!BASE) {
+      showAuth();
+      var msg = $('formMsg');
+      msg.textContent = '提示：当前以本地文件方式打开且未设置 SERVER_URL';
+      return;
+    }
+    if (state.token && state.account) {
+      enterChat();
+    } else {
+      showAuth();
+      setMode('login');
+    }
+  }
+
+  /* 页面从后台回到前台时，若连接已断则立刻重连 */
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' &&
+        state.token && !state.manualClose &&
+        (!state.ws || state.ws.readyState > 1)) {
+      connect();
+    }
+  });
+
+  var prevHeight = window.innerHeight;
+  window.addEventListener('resize', function () {
+    var changed = Math.abs(window.innerHeight - prevHeight) > 80;
+    prevHeight = window.innerHeight;
+    if (changed) scrollToBottom(true);
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
